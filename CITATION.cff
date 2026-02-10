@@ -1,0 +1,8 @@
+cff-version: 1.2.0
+title: g_dreamer
+authors:
+  - family-names: Doe
+    given-names: Donna
+    orcid: https://orcid.org/0000-0000-0000-0000
+year: 2026
+message: Please cite this work if you use it.

@@ -1,0 +1,12 @@
+[tool.poetry]
+name = "g_dreamer"
+version = "0.1.0"
+description = "Graph-based DreamerV3 for multi-agent RL"
+authors = ["Donna Doe <donna@example.com>"]
+
+[tool.poetry.dependencies]
+python = ">=3.9,<3.12"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

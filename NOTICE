@@ -1,0 +1,5 @@
+This project includes code from:
+- DreamerV3 (MIT License)
+- JaxMARL (Apache-2.0 License)
+
+See third_party/ for details.
