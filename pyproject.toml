@@ -1,11 +1,24 @@
 [tool.poetry]
 name = "g_dreamer"
 version = "0.1.0"
-description = "Graph-based DreamerV3 for multi-agent RL"
-authors = ["Donna Doe <donna@example.com>"]
+description = "Graph-based and physics-informed DreamerV3 for multi-agent RL"
+authors = ["Donna Vakalis <donna.vakalis@olympian.org>"]
+packages = [{ include = "dgr", from = "src" }]
 
 [tool.poetry.dependencies]
-python = ">=3.9,<3.12"
+python = ">=3.11,<3.12"
+jax = "^0.9.0.1"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^9.0.2"
+ruff = "^0.15.1"
+pre-commit = "^4.5.1"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
