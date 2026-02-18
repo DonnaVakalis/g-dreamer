@@ -37,6 +37,11 @@ line-length = 100
 [tool.ruff.lint]
 select = ["E", "F", "I"]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["third_party"]
+addopts = "-ra"
+
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"

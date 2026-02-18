@@ -57,7 +57,7 @@ jobs:
           poetry install --with dev --no-interaction --no-ansi
 
       - name: Tests
-        run: poetry run pytest -q
+        run: poetry run pytest -q --ignore=third_party
 
       - name: Build package (sanity)
         run: poetry build
