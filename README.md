@@ -1,5 +1,8 @@
 # g_dreamer
+   .-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-.
+   |   G - D R E A M E R   |   graph + dreamer   |
+   `-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-'
 
-Graph-based take off from DreamerV3 ... for problems that lend themselves to multi-agent and graph representations.
+... for solving problems that lend themselves better to graph representations.
 
-See docs/ for architecture, upstream code map, and more coming soon... (Currently building this a little more each day...)
+can be used for single-agent or multi-agent conceptualizations. more coming soon...
