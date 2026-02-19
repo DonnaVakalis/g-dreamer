@@ -33,6 +33,7 @@ crafter = "^1.8.3"
 
 [tool.ruff]
 line-length = 100
+exclude = ["third_party/**"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]

@@ -2,10 +2,10 @@
 This file serves as the main training orchestrator for the g_dreamer project...
 
 The file is essentially a wrapper and launcher that will evolve to support
-the project's graph-based DreamerV3 variants,
-once they're implemented in the agents/ directory.
+the project's graph-based variants,
+(once they're implemented in the agents/ directory).
 
-Current usage:
+Current usage examples:
 
 # Run baseline DreamerV3 on crafter environment
 python -m dgr.train agent=baseline env=crafter_debug steps=2000

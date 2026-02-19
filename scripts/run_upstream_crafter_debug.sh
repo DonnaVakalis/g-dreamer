@@ -8,7 +8,7 @@ LOGDIR="${1:-$ROOT/experiments/runs/upstream_crafter_debug_$STAMP}"
 mkdir -p "$LOGDIR"
 cd "$ROOT/third_party/dreamerv3"
 
-# Run upstream exactly, but keep logs inside *your* repo.
+# We want to run upstream exactly, but still keep logs inside *this* repo.
 PYTHONPATH=. \
 python dreamerv3/main.py \
   --logdir "$LOGDIR" \
