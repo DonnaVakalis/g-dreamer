@@ -1,7 +1,5 @@
-# g_dreamer
-   .-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-.
-   |   G - D R E A M E R   |   graph + dreamer   |
-   `-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-'
+
+#  G - D R E A M E R   |   graph + dreamer
 
 ... for solving problems that lend themselves better to graph representations.
 
