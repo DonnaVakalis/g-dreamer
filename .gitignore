@@ -1,1 +1,9 @@
 experiments/runs/
+CLAUDE.md
+
+# python
+__pycache__/
+*.pyc
+dist/
+*.egg-info/
+.venv/
