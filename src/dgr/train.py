@@ -60,7 +60,7 @@ def _env_to_upstream_configs(env: str) -> List[str]:
     """
     mapping = {
         "crafter_debug": ["crafter", "debug"],
-        # add later:
+        "toy_consensus_debug": ["debug"],  # actual task override handled separately
         # "dmc_debug": ["dmc", "debug"],
         # "atari_debug": ["atari", "debug"],
     }
@@ -114,6 +114,38 @@ def _run_upstream_dreamerv3(spec: RunSpec) -> int:
     return proc.returncode
 
 
+def _run_upstream_toy_gym(spec: RunSpec) -> int:
+    """
+    Runs upstream DreamerV3 on the toy graph control environment.
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    spec.logdir.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "dgr.run_upstream_toy_gym",
+        "--logdir",
+        str(spec.logdir),
+        "--configs",
+        "debug",
+        "--task",
+        "gym_DGRToyConsensus-v0",
+        "--run.steps",
+        str(spec.steps),
+        *spec.extra_upstream_args,
+    ]
+
+    env = os.environ.copy()
+
+    print("\n[dgr.train] Running upstream DreamerV3 baseline on toy Gym env")
+    print(f"[dgr.train] logdir: {spec.logdir}")
+    print(f"[dgr.train] cmd: {' '.join(cmd)}\n")
+
+    proc = subprocess.run(cmd, cwd=str(repo_root), env=env)
+    return proc.returncode
+
+
 def main(argv: List[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
 
@@ -134,6 +166,8 @@ def main(argv: List[str] | None = None) -> int:
     )
 
     if spec.agent == "baseline":
+        if spec.env == "toy_consensus_debug":
+            return _run_upstream_toy_gym(spec)
         return _run_upstream_dreamerv3(spec)
 
     raise ValueError(f"Unknown agent={spec.agent!r}. Supported: baseline (for now).")
