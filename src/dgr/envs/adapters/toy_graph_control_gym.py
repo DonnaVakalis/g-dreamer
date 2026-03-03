@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import gym
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -44,7 +45,7 @@ def _make_default_config() -> ConsensusConfig:
 
 
 @dataclass
-class ToyConsensusGymEnv:
+class ToyConsensusGymEnv(gym.Env):
     """
     Legacy-Gym shim around the pure JAX toy env.
 
@@ -57,8 +58,6 @@ class ToyConsensusGymEnv:
     seed_value: int = 0
 
     def __post_init__(self) -> None:
-        import gym
-
         self.cfg = _make_default_config()
         d = flat_dim(self.cfg.spec)
 
@@ -120,13 +119,14 @@ class ToyConsensusGymEnv:
 
 
 def register_toy_consensus_env() -> None:
-    import gym
     from gym.envs.registration import register
 
     try:
         register(
             id=ENV_ID,
             entry_point="dgr.envs.adapters.toy_graph_control_gym:ToyConsensusGymEnv",
+            disable_env_checker=True,
+            apply_api_compatibility=False,
         )
     except Exception as exc:  # already-registered is fine
         msg = str(exc).lower()
