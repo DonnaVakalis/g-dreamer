@@ -61,11 +61,8 @@ class ToyConsensusGymEnv(gym.Env):
         self.cfg = _make_default_config()
         d = flat_dim(self.cfg.spec)
 
-        self.observation_space = gym.spaces.Box(
-            low=-np.inf,
-            high=np.inf,
-            shape=(d,),
-            dtype=np.float32,
+        self.observation_space = gym.spaces.Dict(
+            {"vector": gym.spaces.Box(-np.inf, np.inf, (d,), np.float32)}
         )
         self.action_space = gym.spaces.Box(
             low=-1.0,
@@ -74,41 +71,40 @@ class ToyConsensusGymEnv(gym.Env):
             dtype=np.float32,
         )
 
-        self._key = jax.random.PRNGKey(self.seed_value)
+        self._seed = int(self.seed_value)
         self._state = None
+
+    def _next_key(self):
+        self._seed += 1
+        return jax.random.PRNGKey(self._seed)
 
     def seed(self, seed: int | None = None):
         if seed is not None:
             self.seed_value = int(seed)
-            self._key = jax.random.PRNGKey(self.seed_value)
+            self._seed = int(seed)
         return [self.seed_value]
 
     def reset(self):
-        self._key, k = jax.random.split(self._key)
-        self._state, g = jax_reset(k, self.cfg)
-        vec = flatten_graph(g, self.cfg.spec)
-        return np.asarray(vec, dtype=np.float32)
+        with jax.transfer_guard("allow"):
+            k = self._next_key()
+            self._state, g = jax_reset(k, self.cfg)
+            vec = flatten_graph(g, self.cfg.spec)
+            return {"vector": np.asarray(vec, dtype=np.float32)}
 
     def step(self, action):
-        if self._state is None:
-            _ = self.reset()
-
-        action = np.asarray(action, dtype=np.float32)
-        self._key, k = jax.random.split(self._key)
-        self._state, g, reward, done = jax_step(
-            k,
-            self.cfg,
-            self._state,
-            jnp.asarray(action, dtype=jnp.float32),
-        )
-        vec = flatten_graph(g, self.cfg.spec)
-        info = {"is_terminal": bool(done)}
-        return (
-            np.asarray(vec, dtype=np.float32),
-            float(reward),
-            bool(done),
-            info,
-        )
+        with jax.transfer_guard("allow"):
+            if self._state is None:
+                _ = self.reset()
+            k = self._next_key()
+            act = jnp.asarray(np.asarray(action, dtype=np.float32), dtype=jnp.float32)
+            self._state, g, reward, done = jax_step(k, self.cfg, self._state, act)
+            vec = flatten_graph(g, self.cfg.spec)
+            return (
+                {"vector": np.asarray(vec, dtype=np.float32)},
+                float(reward),
+                bool(done),
+                {"is_terminal": bool(done)},
+            )
 
     def render(self, mode="rgb_array"):
         # Minimal placeholder image; enough if anything calls render().
@@ -124,7 +120,7 @@ def register_toy_consensus_env() -> None:
     try:
         register(
             id=ENV_ID,
-            entry_point="dgr.envs.adapters.toy_graph_control_gym:ToyConsensusGymEnv",
+            entry_point=ToyConsensusGymEnv,
             disable_env_checker=True,
             apply_api_compatibility=False,
         )

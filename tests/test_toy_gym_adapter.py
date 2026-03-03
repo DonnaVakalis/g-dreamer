@@ -13,13 +13,17 @@ def test_toy_gym_env_reset_step():
     env = gym.make(ENV_ID, disable_env_checker=True)
 
     obs = env.reset()
-    assert obs.ndim == 1
-    assert obs.dtype == np.float32
+    assert isinstance(obs, dict)
+    assert "vector" in obs
+    assert obs["vector"].ndim == 1
+    assert obs["vector"].dtype == np.float32
 
     action = np.zeros(env.action_space.shape, dtype=np.float32)
     obs2, reward, done, info = env.step(action)
 
-    assert obs2.shape == obs.shape
+    assert isinstance(obs2, dict)
+    assert "vector" in obs2
+    assert obs2["vector"].shape == obs["vector"].shape
     assert isinstance(reward, float)
     assert isinstance(done, bool)
     assert "is_terminal" in info
