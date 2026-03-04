@@ -1,6 +1,6 @@
 # Graph observation contract and shape helpers
 
-# A note about this first import:
+# A note to self about this first import:
 # This is especially useful in JAX/ML bc we
 # have complex type relationships and want to avoid import-time muck :)
 from __future__ import annotations
@@ -34,6 +34,13 @@ class Graph:
     node_mask:  (N_max,) bool
     edge_mask:  (E_max,) bool
     globals:    (F_g,) float32 (F_g may be 0)
+
+    where:
+    N_max: maximum number of node slots in the padded graph.
+    E_max: maximum number of edge slots in the padded graph.
+    F_n: number of features per node (node feature dimension).
+    F_e: number of features per edge (edge feature dimension).
+    F_g: number of features per global (global feature dimension).
     """
 
     nodes: jnp.ndarray
