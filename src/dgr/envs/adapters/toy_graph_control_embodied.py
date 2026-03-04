@@ -32,7 +32,9 @@ class ToyGraphControlEmbodied:
     seed: int = 0
 
     def __post_init__(self) -> None:
-        self._key = jax.random.PRNGKey(self.seed)
+        # Safe under global jax_transfer_guard=disallow setups.
+        with jax.transfer_guard("allow"):
+            self._key = jax.random.PRNGKey(self.seed)
         self._state: EnvState | None = None
         self._done = True
 
@@ -63,31 +65,32 @@ class ToyGraphControlEmbodied:
         return
 
     def step(self, action: dict):
-        do_reset = bool(action.get("reset", False))
-        act = action.get("action", np.zeros((self.cfg.spec.n_max,), np.float32))
-        act = jnp.asarray(act, dtype=jnp.float32)
+        with jax.transfer_guard("allow"):
+            do_reset = bool(action.get("reset", False))
+            act = action.get("action", np.zeros((self.cfg.spec.n_max,), np.float32))
+            act = jnp.asarray(act, dtype=jnp.float32)
 
-        if do_reset or self._done or self._state is None:
+            if do_reset or self._done or self._state is None:
+                self._key, k = jax.random.split(self._key)
+                self._state, g = jax_reset(k, self.cfg)
+                self._done = False
+                vec = flatten_graph(g, self.cfg.spec)
+                return {
+                    "vector": np.asarray(vec, dtype=np.float32),
+                    "reward": np.float32(0.0),
+                    "is_first": True,
+                    "is_last": False,
+                    "is_terminal": False,
+                }
+
             self._key, k = jax.random.split(self._key)
-            self._state, g = jax_reset(k, self.cfg)
-            self._done = False
+            self._state, g, rew, done = jax_step(k, self.cfg, self._state, act)
+            self._done = bool(done)
             vec = flatten_graph(g, self.cfg.spec)
             return {
                 "vector": np.asarray(vec, dtype=np.float32),
-                "reward": np.float32(0.0),
-                "is_first": True,
-                "is_last": False,
-                "is_terminal": False,
+                "reward": np.asarray(rew, dtype=np.float32),
+                "is_first": False,
+                "is_last": bool(done),
+                "is_terminal": bool(done),
             }
-
-        self._key, k = jax.random.split(self._key)
-        self._state, g, rew, done = jax_step(k, self.cfg, self._state, act)
-        self._done = bool(done)
-        vec = flatten_graph(g, self.cfg.spec)
-        return {
-            "vector": np.asarray(vec, dtype=np.float32),
-            "reward": np.asarray(rew, dtype=np.float32),
-            "is_first": False,
-            "is_last": bool(done),
-            "is_terminal": bool(done),
-        }

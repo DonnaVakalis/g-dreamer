@@ -28,7 +28,7 @@ def get_scenario(name: str) -> ToyGraphControlConfig:
         return ToyGraphControlConfig(
             spec=spec,
             n_real=n_real,
-            dynamics=DynamicsConfig(horizon=10, alpha=0.2, beta=0.5, noise_std=0.0),
+            dynamics=DynamicsConfig(horizon=20, alpha=0.2, beta=0.5, noise_std=0.0),
             actuator_mask=_dense_actuation(spec, n_real),
         )
 
@@ -37,7 +37,7 @@ def get_scenario(name: str) -> ToyGraphControlConfig:
         return ToyGraphControlConfig(
             spec=spec,
             n_real=n_real,
-            dynamics=DynamicsConfig(horizon=10, alpha=0.2, beta=0.5, noise_std=0.0),
+            dynamics=DynamicsConfig(horizon=20, alpha=0.2, beta=0.5, noise_std=0.0),
             actuator_mask=_sparse_actuation_even(spec, n_real),
         )
 

@@ -5,12 +5,18 @@ import pytest
 
 gym = pytest.importorskip("gym")
 
-from dgr.envs.adapters.toy_graph_control_gym import ENV_ID, register_toy_consensus_env  # noqa: E402
+from dgr.envs.adapters.toy_graph_control_gym import (  # noqa: E402
+    env_id_for_scenario,
+    register_toy_consensus_envs,
+)
 
 
 def test_toy_gym_env_reset_step():
-    register_toy_consensus_env()
-    env = gym.make(ENV_ID, disable_env_checker=True)
+    register_toy_consensus_envs()
+    env = gym.make(
+        env_id_for_scenario("debug_ring_dense"),
+        disable_env_checker=True,
+    )
 
     obs = env.reset()
     assert isinstance(obs, dict)

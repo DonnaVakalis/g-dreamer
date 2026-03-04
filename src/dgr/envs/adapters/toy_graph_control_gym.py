@@ -11,37 +11,22 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from dgr.envs.suites.toy_graph_control.consensus import (
-    ConsensusConfig,
-)
-from dgr.envs.suites.toy_graph_control.consensus import (
+from dgr.envs.suites.toy_graph_control.core import (
     reset as jax_reset,
 )
-from dgr.envs.suites.toy_graph_control.consensus import (
+from dgr.envs.suites.toy_graph_control.core import (
     step as jax_step,
 )
+from dgr.envs.suites.toy_graph_control.scenarios import (
+    get_scenario,
+)
 from dgr.envs.wrappers.flatten_graph import flat_dim, flatten_graph
-from dgr.interface.graph_spec import GraphSpec
 
-ENV_ID = "DGRToyConsensus-v0"
-
-
-def _make_default_config() -> ConsensusConfig:
-    spec = GraphSpec(
-        n_max=8,
-        e_max=16,  # enough for ring with n_real <= 8 (needs 2 * n_real)
-        f_n=2,
-        f_e=0,
-        f_g=0,
-    )
-    return ConsensusConfig(
-        spec=spec,
-        n_real=5,
-        horizon=50,
-        alpha=0.2,
-        beta=0.5,
-        noise_std=0.01,
-    )
+SCENARIO_TO_ENV_ID = {
+    "debug_ring_dense": "DGRToyConsensusDebugDense-v0",
+    "debug_ring_sparse": "DGRToyConsensusDebugSparse-v0",
+    "train_ring_dense": "DGRToyConsensusTrainDense-v0",
+}
 
 
 @dataclass
@@ -55,10 +40,15 @@ class ToyConsensusGymEnv(gym.Env):
       float32 vector of shape (n_max,)
     """
 
+    metadata = {"render_modes": ["rgb_array"]}  # minimal placeholder
     seed_value: int = 0
+    scenario_name: str = "debug_ring_dense"  # e.g., train_ring_dense, debug_ring_sparse
 
     def __post_init__(self) -> None:
-        self.cfg = _make_default_config()
+        # DreamerV3 enables jax_transfer_guard=disallow; allow explicit transfers
+        # during env construction where scenario config builds JAX arrays.
+        with jax.transfer_guard("allow"):
+            self.cfg = get_scenario(self.scenario_name)
         d = flat_dim(self.cfg.spec)
 
         self.observation_space = gym.spaces.Dict(
@@ -114,20 +104,28 @@ class ToyConsensusGymEnv(gym.Env):
         return None
 
 
-def register_toy_consensus_env() -> None:
+def env_id_for_scenario(scenario_name: str) -> str:
+    try:
+        return SCENARIO_TO_ENV_ID[scenario_name]
+    except KeyError as exc:
+        raise ValueError(f"Unknown scenario_name: {scenario_name}") from exc
+
+
+def register_toy_consensus_envs() -> None:
     from gym.envs.registration import register
 
-    try:
-        register(
-            id=ENV_ID,
-            entry_point=ToyConsensusGymEnv,
-            disable_env_checker=True,
-            apply_api_compatibility=False,
-        )
-    except Exception as exc:  # already-registered is fine
-        msg = str(exc).lower()
-        if "already registered" not in msg and "cannot re-register id" not in msg:
-            raise
+    for scenario_name, env_id in SCENARIO_TO_ENV_ID.items():
+        try:
+            register(
+                id=env_id,
+                entry_point=ToyConsensusGymEnv,
+                kwargs={"scenario_name": scenario_name},
+                disable_env_checker=True,
+                apply_api_compatibility=False,
+            )
+        except Exception as exc:  # already-registered is fine
+            msg = str(exc).lower()
+            if "already registered" not in msg and "cannot re-register id" not in msg:
+                raise
 
-    # Touch registry once so import-time failures surface early.
-    _ = gym.spec(ENV_ID)
+    _ = gym.spec(env_id)

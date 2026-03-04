@@ -1,5 +1,5 @@
 """
-This is a bridge that registers the env, then calls upstream
+This is a bridge that registers the env, then calls
 upstream DreamerV3 on the toy graph control environment.
 """
 
@@ -22,9 +22,9 @@ def main(argv: list[str] | None = None) -> int:
     # Make vendored upstream importable as `dreamerv3`.
     sys.path.insert(0, str(upstream_root))
 
-    from dgr.envs.adapters.toy_graph_control_gym import register_toy_consensus_env
+    from dgr.envs.adapters.toy_graph_control_gym import register_toy_consensus_envs
 
-    register_toy_consensus_env()
+    register_toy_consensus_envs()
 
     # Optional: mimic running from inside the upstream repo.
     os.chdir(upstream_root)

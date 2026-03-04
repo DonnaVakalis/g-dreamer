@@ -27,6 +27,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List
 
+from dgr.envs.adapters.toy_graph_control_gym import env_id_for_scenario
+
 
 @dataclass(frozen=True)
 class RunSpec:
@@ -101,7 +103,7 @@ def _run_upstream_dreamerv3(spec: RunSpec) -> int:
         *spec.extra_upstream_args,
     ]
 
-    # Mimic how upstream expects to be run (like your Group 1 script)
+    # Mimic how upstream expects to be run
     env = os.environ.copy()
     env["PYTHONPATH"] = "." if "PYTHONPATH" not in env else f".:{env['PYTHONPATH']}"
 
@@ -112,6 +114,19 @@ def _run_upstream_dreamerv3(spec: RunSpec) -> int:
 
     proc = subprocess.run(cmd, cwd=str(upstream_root), env=env)
     return proc.returncode
+
+
+def _toy_env_to_task(env: str) -> str:
+    mapping = {
+        "toy_consensus_debug_dense": f"gym_{env_id_for_scenario('debug_ring_dense')}",
+        "toy_consensus_debug_sparse": f"gym_{env_id_for_scenario('debug_ring_sparse')}",
+        "toy_consensus_train_dense": f"gym_{env_id_for_scenario('train_ring_dense')}",
+        # keep old name temporarily for backward compatibility
+        "toy_consensus_debug": f"gym_{env_id_for_scenario('train_ring_dense')}",
+    }
+    if env not in mapping:
+        raise ValueError(f"Unknown toy env: {env}")
+    return mapping[env]
 
 
 def _run_upstream_toy_gym(spec: RunSpec) -> int:
@@ -130,7 +145,7 @@ def _run_upstream_toy_gym(spec: RunSpec) -> int:
         "--configs",
         "debug",
         "--task",
-        "gym_DGRToyConsensus-v0",
+        _toy_env_to_task(spec.env),
         "--run.steps",
         str(spec.steps),
         *spec.extra_upstream_args,
@@ -166,8 +181,11 @@ def main(argv: List[str] | None = None) -> int:
     )
 
     if spec.agent == "baseline":
-        if spec.env == "toy_consensus_debug":
+        try:
+            _toy_env_to_task(spec.env)
             return _run_upstream_toy_gym(spec)
+        except ValueError:
+            pass
         return _run_upstream_dreamerv3(spec)
 
     raise ValueError(f"Unknown agent={spec.agent!r}. Supported: baseline (for now).")
