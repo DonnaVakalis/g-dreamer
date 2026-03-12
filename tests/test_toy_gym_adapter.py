@@ -13,10 +13,7 @@ from dgr.envs.adapters.toy_graph_control_gym import (  # noqa: E402
 
 def test_toy_gym_env_reset_step():
     register_toy_consensus_envs()
-    env = gym.make(
-        env_id_for_scenario("debug_ring_dense"),
-        disable_env_checker=True,
-    )
+    env = gym.make(env_id_for_scenario("debug_ring_dense"), disable_env_checker=True)
 
     obs = env.reset()
     assert isinstance(obs, dict)
