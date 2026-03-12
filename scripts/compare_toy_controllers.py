@@ -1,5 +1,19 @@
+"""
+Compares the performance of different toy controllers
+on the toy graph control environment.
+
+Run any scenario + seed from the command line,
+and optionally write outputs to a predictable folder.
+
+Example usage:
+poetry run python scripts/compare_toy_controllers.py debug_ring_sparse \
+    --seed 0 --outdir experiments/toy_debug/debug_ring_sparse/seed_000/
+
+"""
+
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
@@ -15,7 +29,7 @@ from dgr.envs.suites.toy_graph_control.core import reset, step
 from dgr.envs.suites.toy_graph_control.scenarios import get_scenario
 
 
-def rollout(name: str, scenario_name: str, seed: int = 0):
+def rollout(name: str, scenario_name: str, seed: int = 0, k_prop: float = 0.5):
     cfg = get_scenario(scenario_name)
     key = jax.random.PRNGKey(seed)
     state, obs = reset(key, cfg)
@@ -34,7 +48,7 @@ def rollout(name: str, scenario_name: str, seed: int = 0):
             action = random_action(k, state.node_mask)
         elif name == "proportional":
             action = proportional_action(
-                state.x, state.goal, state.node_mask, cfg.actuator_mask, k=0.5
+                state.x, state.goal, state.node_mask, cfg.actuator_mask, k=k_prop
             )
         else:
             raise ValueError(name)
@@ -51,6 +65,8 @@ def rollout(name: str, scenario_name: str, seed: int = 0):
     return {
         "controller": name,
         "scenario": scenario_name,
+        "seed": seed,
+        "k_prop": k_prop,
         "start_mse": start_mse,
         "end_mse": float(mse_to_goal(state.x, state.goal, state.node_mask)),
         "total_reward": total_reward,
@@ -60,22 +76,33 @@ def rollout(name: str, scenario_name: str, seed: int = 0):
 
 
 def main():
-    scenario_name = "debug_ring_sparse"  # debug_ring_dense, debug_ring_sparse
-    outdir = Path("experiments/toy_debug") / scenario_name / "seed_000"
-    outdir.mkdir(parents=True, exist_ok=True)
+    p = argparse.ArgumentParser()
+    p.add_argument("scenario", help="Scenario name from scenarios.get_scenario()")
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--k-prop", type=float, default=0.5)
+    p.add_argument(
+        "--outdir",
+        type=str,
+        default="experiments/toy_debug",
+        help="Base output dir (scenario/seed_xxx will be created under this).",
+    )
+    p.add_argument("--no-write", action="store_true", help="Do not write json files.")
+    args = p.parse_args()
+
+    scenario_name = args.scenario
+    seed = args.seed
+    k_prop = args.k_prop
 
     results = [
-        rollout("zero", scenario_name, seed=0),
-        rollout("random", scenario_name, seed=0),
-        rollout("proportional", scenario_name, seed=0),
+        rollout("zero", scenario_name, seed=seed, k_prop=k_prop),
+        rollout("random", scenario_name, seed=seed, k_prop=k_prop),
+        rollout("proportional", scenario_name, seed=seed, k_prop=k_prop),
     ]
-
-    for r in results:
-        with (outdir / f"{r['controller']}.json").open("w") as f:
-            json.dump(r, f, indent=2)
 
     summary = {
         "scenario": scenario_name,
+        "seed": seed,
+        "k_prop": k_prop,
         "results": [
             {
                 "controller": r["controller"],
@@ -88,10 +115,15 @@ def main():
         ],
     }
 
-    with (outdir / "summary.json").open("w") as f:
-        json.dump(summary, f, indent=2)
-
     print(json.dumps(summary, indent=2))
+
+    if not args.no_write:
+        outdir = Path(args.outdir) / scenario_name / f"seed_{seed:03d}"
+        outdir.mkdir(parents=True, exist_ok=True)
+
+        for r in results:
+            (outdir / f"{r['controller']}.json").write_text(json.dumps(r, indent=2))
+        (outdir / "summary.json").write_text(json.dumps(summary, indent=2))
 
 
 if __name__ == "__main__":
