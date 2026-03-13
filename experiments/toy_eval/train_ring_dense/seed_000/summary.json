@@ -1,0 +1,27 @@
+{
+  "scenario": "train_ring_dense",
+  "episodes": 50,
+  "seed": 0,
+  "k_prop": 0.5,
+  "zero": {
+    "mean_score": -58.11180114746094,
+    "std_score": 29.795982360839844,
+    "mean_length": 50.0,
+    "mean_end_mse": 1.141107201576233,
+    "scores_jsonl": "experiments/toy_eval/train_ring_dense/seed_000/zero__scores.jsonl"
+  },
+  "random": {
+    "mean_score": -68.11908721923828,
+    "std_score": 38.41693115234375,
+    "mean_length": 50.0,
+    "mean_end_mse": 1.442665696144104,
+    "scores_jsonl": "experiments/toy_eval/train_ring_dense/seed_000/random__scores.jsonl"
+  },
+  "proportional": {
+    "mean_score": -10.12281322479248,
+    "std_score": 5.356072425842285,
+    "mean_length": 50.0,
+    "mean_end_mse": 0.17794188857078552,
+    "scores_jsonl": "experiments/toy_eval/train_ring_dense/seed_000/proportional__scores.jsonl"
+  }
+}
