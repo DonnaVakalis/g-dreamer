@@ -135,6 +135,7 @@ def _run_upstream_toy_gym(spec: RunSpec) -> int:
     """
     repo_root = Path(__file__).resolve().parents[2]
     spec.logdir.mkdir(parents=True, exist_ok=True)
+    configs = ["debug"] if "debug" in spec.env else ["size1m"]
 
     cmd = [
         sys.executable,
@@ -143,7 +144,7 @@ def _run_upstream_toy_gym(spec: RunSpec) -> int:
         "--logdir",
         str(spec.logdir),
         "--configs",
-        "debug",
+        *configs,
         "--task",
         _toy_env_to_task(spec.env),
         "--run.steps",
