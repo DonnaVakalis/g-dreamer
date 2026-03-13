@@ -48,6 +48,12 @@ src/dgr/
 
 See [docs/graph_obs_contract.md](docs/graph_obs_contract.md) for the padded/masked graph observation spec.
 
+## Experiments
+
+- `experiments/runs/`: train/eval with Dreamer (checkpoints)
+- `experiments/toy_eval/`: controller baselines (no checkpoints)
+- `experiments/toy_debug/`: single-episode proofs / development traces
+
 ## Dev
 
 Pre-commit hooks (ruff lint + format):
