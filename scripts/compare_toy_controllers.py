@@ -20,6 +20,7 @@ from pathlib import Path
 import jax
 
 from dgr.envs.suites.toy_graph_control.controllers import (
+    masked_proportional_action,
     mse_to_goal,
     proportional_action,
     random_action,
@@ -49,6 +50,10 @@ def rollout(name: str, scenario_name: str, seed: int = 0, k_prop: float = 0.5):
         elif name == "proportional":
             action = proportional_action(
                 state.x, state.goal, state.node_mask, cfg.actuator_mask, k=k_prop
+            )
+        elif name == "masked_proportional":
+            action = masked_proportional_action(
+                state.x, state.goal, state.node_mask, cfg.actuator_mask, cfg.goal_obs_mask, k=k_prop
             )
         else:
             raise ValueError(name)
@@ -97,6 +102,7 @@ def main():
         rollout("zero", scenario_name, seed=seed, k_prop=k_prop),
         rollout("random", scenario_name, seed=seed, k_prop=k_prop),
         rollout("proportional", scenario_name, seed=seed, k_prop=k_prop),
+        rollout("masked_proportional", scenario_name, seed=seed, k_prop=k_prop),
     ]
 
     summary = {

@@ -34,6 +34,13 @@ class ConsensusConfig:
 
 def _to_core(cfg: ConsensusConfig) -> ToyGraphControlConfig:
     actuator_mask = jnp.arange(cfg.spec.n_max) < cfg.n_real
+    goal_obs_mask = getattr(cfg, "goal_obs_mask", None)
+    if goal_obs_mask is None:
+        goal_obs_mask = jnp.arange(cfg.spec.n_max) < cfg.n_real
+    if goal_obs_mask.shape != (cfg.spec.n_max,):
+        raise ValueError(
+            f"Expected goal_obs_mask shape {(cfg.spec.n_max,)}, got {goal_obs_mask.shape}"
+        )
     return ToyGraphControlConfig(
         spec=cfg.spec,
         n_real=cfg.n_real,
@@ -44,6 +51,7 @@ def _to_core(cfg: ConsensusConfig) -> ToyGraphControlConfig:
             noise_std=cfg.noise_std,
         ),
         actuator_mask=actuator_mask,
+        goal_obs_mask=goal_obs_mask,
     )
 
 

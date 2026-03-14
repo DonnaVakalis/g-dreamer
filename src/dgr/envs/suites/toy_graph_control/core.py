@@ -4,7 +4,7 @@ Generalizes the toy graph control environment to different scenarios.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import jax
 import jax.numpy as jnp
@@ -21,12 +21,20 @@ class DynamicsConfig:
 
 
 @dataclass(frozen=True)
+class GoalConfig:
+    mode: str = "iid"  # "iid" or "smooth"
+    smooth_steps: int = 0  # number of smoothing iterations
+    residual_std: float = 0.0  # add iid noise after smoothing (keeps it imperfect)
+
+
+@dataclass(frozen=True)
 class ToyGraphControlConfig:
     spec: GraphSpec
     n_real: int
     dynamics: DynamicsConfig
     actuator_mask: jnp.ndarray  # (N_max,) bool
     goal_obs_mask: jnp.ndarray  # (N_max,) bool  — which nodes' goal is vis  in observation
+    goal: GoalConfig = field(default_factory=GoalConfig)
 
 
 @dataclass(frozen=True)
@@ -60,6 +68,49 @@ def make_ring_topology(
     receivers = jnp.zeros((spec.e_max,), dtype=jnp.int32).at[:e_real].set(receivers_real)
     edge_mask = jnp.arange(spec.e_max) < e_real
     return senders, receivers, edge_mask
+
+
+def _make_goal(
+    key: jax.Array,
+    spec: GraphSpec,
+    node_mask: jnp.ndarray,
+    senders: jnp.ndarray,
+    receivers: jnp.ndarray,
+    edge_mask: jnp.ndarray,
+    goal_cfg: GoalConfig,
+) -> jnp.ndarray:
+    key0, key_res = jax.random.split(key, 2)
+
+    goal = jax.random.normal(key0, (spec.n_max,), dtype=jnp.float32)
+    goal = jnp.where(node_mask, goal, 0.0)
+
+    if goal_cfg.mode == "iid":
+        return goal
+
+    if goal_cfg.mode == "smooth":
+        g = goal
+        for _ in range(int(goal_cfg.smooth_steps)):
+            g = _neighbor_mean(g, senders, receivers, edge_mask)
+            g = jnp.where(node_mask, g, 0.0)
+        if goal_cfg.residual_std > 0:
+            eps = goal_cfg.residual_std * jax.random.normal(
+                key_res, (spec.n_max,), dtype=jnp.float32
+            )
+            g = jnp.where(node_mask, g + eps, 0.0)
+        return g
+
+    raise ValueError(f"Unknown goal_cfg.mode: {goal_cfg.mode!r}")
+
+
+def _neighbor_mean(
+    values: jnp.ndarray, senders: jnp.ndarray, receivers: jnp.ndarray, edge_mask: jnp.ndarray
+) -> jnp.ndarray:
+    n_max = values.shape[0]
+    edge_mask_f = edge_mask.astype(jnp.float32)
+    msgs = values[senders] * edge_mask_f
+    agg = jnp.zeros((n_max,), dtype=jnp.float32).at[receivers].add(msgs)
+    deg = jnp.zeros((n_max,), dtype=jnp.float32).at[receivers].add(edge_mask_f)
+    return agg / jnp.maximum(deg, 1.0)
 
 
 def observe(cfg: ToyGraphControlConfig, state: EnvState) -> Graph:
@@ -107,10 +158,8 @@ def reset(key: jax.Array, cfg: ToyGraphControlConfig) -> tuple[EnvState, Graph]:
 
     k1, k2 = jax.random.split(key, 2)
     x0 = jax.random.normal(k1, (spec.n_max,), dtype=jnp.float32)
-    goal = jax.random.normal(k2, (spec.n_max,), dtype=jnp.float32)
-
     x0 = jnp.where(node_mask, x0, jnp.zeros_like(x0))
-    goal = jnp.where(node_mask, goal, jnp.zeros_like(goal))
+    goal = _make_goal(k2, spec, node_mask, senders, receivers, edge_mask, cfg.goal)
 
     state = EnvState(
         t=jnp.array(0, dtype=jnp.int32),
