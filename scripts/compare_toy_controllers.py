@@ -20,6 +20,7 @@ from pathlib import Path
 import jax
 
 from dgr.envs.suites.toy_graph_control.controllers import (
+    inferred_goal_proportional_action,
     masked_proportional_action,
     mse_to_goal,
     proportional_action,
@@ -54,6 +55,21 @@ def rollout(name: str, scenario_name: str, seed: int = 0, k_prop: float = 0.5):
         elif name == "masked_proportional":
             action = masked_proportional_action(
                 state.x, state.goal, state.node_mask, cfg.actuator_mask, cfg.goal_obs_mask, k=k_prop
+            )
+        elif name == "inferred_proportional":
+            # visible_goal is what the agent sees (0 where hidden)
+            visible_goal = obs.nodes[:, 1]
+            action = inferred_goal_proportional_action(
+                state.x,
+                visible_goal,
+                state.node_mask,
+                cfg.actuator_mask,
+                cfg.goal_obs_mask,
+                state.senders,
+                state.receivers,
+                state.edge_mask,
+                iters=8,
+                k=k_prop,
             )
         else:
             raise ValueError(name)
@@ -103,6 +119,7 @@ def main():
         rollout("random", scenario_name, seed=seed, k_prop=k_prop),
         rollout("proportional", scenario_name, seed=seed, k_prop=k_prop),
         rollout("masked_proportional", scenario_name, seed=seed, k_prop=k_prop),
+        rollout("inferred_proportional", scenario_name, seed=seed, k_prop=k_prop),
     ]
 
     summary = {
