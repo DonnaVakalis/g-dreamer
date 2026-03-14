@@ -8,7 +8,7 @@ import jax.numpy as jnp
 
 from dgr.interface.graph_spec import GraphSpec
 
-from .core import DynamicsConfig, ToyGraphControlConfig
+from .core import DynamicsConfig, GoalConfig, ToyGraphControlConfig
 
 
 def _dense_actuation(spec: GraphSpec, n_real: int) -> jnp.ndarray:
@@ -28,6 +28,15 @@ def _leader_goals_visible(spec: GraphSpec, n_real: int, leaders: int = 1) -> jnp
     # Only the first `leaders` nodes (among real nodes) have goal visible.
     idx = jnp.arange(spec.n_max)
     return idx < leaders  # leaders are always within real nodes if leaders <= n_real
+
+
+def _leaders_spaced(spec: GraphSpec, n_real: int, leaders: int) -> jnp.ndarray:
+    # Choose roughly evenly spaced leaders among real nodes.
+    if leaders <= 0:
+        return jnp.zeros((spec.n_max,), dtype=jnp.bool_)
+    idx = jnp.linspace(0, max(n_real - 1, 0), leaders).round().astype(jnp.int32)
+    mask = jnp.zeros((spec.n_max,), dtype=jnp.bool_).at[idx].set(True)
+    return mask
 
 
 def get_scenario(name: str) -> ToyGraphControlConfig:
@@ -83,4 +92,27 @@ def get_scenario(name: str) -> ToyGraphControlConfig:
             goal_obs_mask=_leader_goals_visible(spec, n_real, leaders=1),
         )
 
+    if name == "debug_ring_hidden_goal_leader3_smooth":
+        n_real = 5
+        return ToyGraphControlConfig(
+            spec=spec,
+            n_real=n_real,
+            dynamics=DynamicsConfig(horizon=10, alpha=0.2, beta=0.5, noise_std=0.0),
+            actuator_mask=_dense_actuation(spec, n_real),
+            goal_obs_mask=_leaders_spaced(spec, n_real, leaders=3),
+            goal=GoalConfig(mode="smooth", smooth_steps=8, residual_std=0.1),
+        )
+
+    if name == "train_ring_hidden_goal_leader3_smooth":
+        n_real = 5
+        return ToyGraphControlConfig(
+            spec=spec,
+            n_real=n_real,
+            dynamics=DynamicsConfig(horizon=50, alpha=0.2, beta=0.5, noise_std=0.01),
+            actuator_mask=_dense_actuation(spec, n_real),
+            goal_obs_mask=_leaders_spaced(spec, n_real, leaders=3),
+            goal=GoalConfig(mode="smooth", smooth_steps=8, residual_std=0.1),
+        )
+
+    # TODO: later add sparse actuation variants too.
     raise ValueError(f"Unknown scenario: {name}")
