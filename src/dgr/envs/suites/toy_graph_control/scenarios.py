@@ -20,6 +20,16 @@ def _sparse_actuation_even(spec: GraphSpec, n_real: int) -> jnp.ndarray:
     return (idx < n_real) & ((idx % 2) == 0)
 
 
+def _all_goals_visible(spec: GraphSpec, n_real: int) -> jnp.ndarray:
+    return jnp.arange(spec.n_max) < n_real
+
+
+def _leader_goals_visible(spec: GraphSpec, n_real: int, leaders: int = 1) -> jnp.ndarray:
+    # Only the first `leaders` nodes (among real nodes) have goal visible.
+    idx = jnp.arange(spec.n_max)
+    return idx < leaders  # leaders are always within real nodes if leaders <= n_real
+
+
 def get_scenario(name: str) -> ToyGraphControlConfig:
     spec = GraphSpec(n_max=8, e_max=16, f_n=2, f_e=0, f_g=0)
 
@@ -30,6 +40,7 @@ def get_scenario(name: str) -> ToyGraphControlConfig:
             n_real=n_real,
             dynamics=DynamicsConfig(horizon=20, alpha=0.2, beta=0.5, noise_std=0.0),
             actuator_mask=_dense_actuation(spec, n_real),
+            goal_obs_mask=_all_goals_visible(spec, n_real),
         )
 
     if name == "debug_ring_sparse":
@@ -39,6 +50,7 @@ def get_scenario(name: str) -> ToyGraphControlConfig:
             n_real=n_real,
             dynamics=DynamicsConfig(horizon=20, alpha=0.2, beta=0.5, noise_std=0.0),
             actuator_mask=_sparse_actuation_even(spec, n_real),
+            goal_obs_mask=_all_goals_visible(spec, n_real),
         )
 
     if name == "train_ring_dense":
@@ -48,6 +60,27 @@ def get_scenario(name: str) -> ToyGraphControlConfig:
             n_real=n_real,
             dynamics=DynamicsConfig(horizon=50, alpha=0.2, beta=0.5, noise_std=0.01),
             actuator_mask=_dense_actuation(spec, n_real),
+            goal_obs_mask=_all_goals_visible(spec, n_real),
+        )
+
+    if name == "debug_ring_hidden_goal_leader1":
+        n_real = 5
+        return ToyGraphControlConfig(
+            spec=spec,
+            n_real=n_real,
+            dynamics=DynamicsConfig(horizon=10, alpha=0.2, beta=0.5, noise_std=0.0),
+            actuator_mask=_dense_actuation(spec, n_real),
+            goal_obs_mask=_leader_goals_visible(spec, n_real, leaders=1),
+        )
+
+    if name == "train_ring_hidden_goal_leader1":
+        n_real = 5
+        return ToyGraphControlConfig(
+            spec=spec,
+            n_real=n_real,
+            dynamics=DynamicsConfig(horizon=50, alpha=0.2, beta=0.5, noise_std=0.01),
+            actuator_mask=_dense_actuation(spec, n_real),
+            goal_obs_mask=_leader_goals_visible(spec, n_real, leaders=1),
         )
 
     raise ValueError(f"Unknown scenario: {name}")
