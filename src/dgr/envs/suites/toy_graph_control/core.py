@@ -26,6 +26,7 @@ class ToyGraphControlConfig:
     n_real: int
     dynamics: DynamicsConfig
     actuator_mask: jnp.ndarray  # (N_max,) bool
+    goal_obs_mask: jnp.ndarray  # (N_max,) bool  — which nodes' goal is vis  in observation
 
 
 @dataclass(frozen=True)
@@ -66,7 +67,10 @@ def observe(cfg: ToyGraphControlConfig, state: EnvState) -> Graph:
     if spec.f_n != 2:
         raise ValueError("This env uses node features [x, goal], so GraphSpec.f_n must be 2.")
 
-    nodes = jnp.stack([state.x, state.goal], axis=-1).astype(jnp.float32)
+    visible_goal = (
+        state.goal * cfg.goal_obs_mask.astype(jnp.float32) * state.node_mask.astype(jnp.float32)
+    )
+    nodes = jnp.stack([state.x, visible_goal], axis=-1).astype(jnp.float32)
     nodes = jnp.where(state.node_mask[:, None], nodes, jnp.zeros_like(nodes))
 
     edges = jnp.zeros((spec.e_max, spec.f_e), dtype=jnp.float32)
@@ -92,6 +96,10 @@ def reset(key: jax.Array, cfg: ToyGraphControlConfig) -> tuple[EnvState, Graph]:
     if cfg.actuator_mask.shape != (spec.n_max,):
         raise ValueError(
             f"Expected actuator_mask shape {(spec.n_max,)}, got {cfg.actuator_mask.shape}"
+        )
+    if cfg.goal_obs_mask.shape != (spec.n_max,):
+        raise ValueError(
+            f"Expected goal_obs_mask shape {(spec.n_max,)}, got {cfg.goal_obs_mask.shape}"
         )
 
     node_mask = jnp.arange(spec.n_max) < cfg.n_real

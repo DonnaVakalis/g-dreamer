@@ -10,6 +10,7 @@ python = ">=3.11,<3.12"
 jax = "0.4.33"
 numpy = "<2"
 jaxlib = "0.4.33"
+wandb = "^0.25.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.0.2"
