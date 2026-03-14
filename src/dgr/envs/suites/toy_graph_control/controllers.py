@@ -29,6 +29,21 @@ def proportional_action(
     return jnp.where(mask, u, 0.0).astype(jnp.float32)
 
 
+def masked_proportional_action(
+    x: jnp.ndarray,
+    goal: jnp.ndarray,
+    node_mask: jnp.ndarray,
+    actuator_mask: jnp.ndarray,
+    goal_obs_mask: jnp.ndarray,
+    k: float = 0.5,
+) -> jnp.ndarray:
+    # Only uses goal where it is visible.
+    visible_goal = goal * goal_obs_mask.astype(jnp.float32)
+    u = k * (visible_goal - x)
+    mask = node_mask & actuator_mask & goal_obs_mask
+    return jnp.where(mask, u, 0.0).astype(jnp.float32)
+
+
 def mse_to_goal(x: jnp.ndarray, goal: jnp.ndarray, node_mask: jnp.ndarray) -> jnp.ndarray:
     mask_f = node_mask.astype(jnp.float32)
     err = (x - goal) * mask_f
