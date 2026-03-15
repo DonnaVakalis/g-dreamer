@@ -50,6 +50,13 @@ def mse_to_goal(x: jnp.ndarray, goal: jnp.ndarray, node_mask: jnp.ndarray) -> jn
     return jnp.sum(err * err) / jnp.maximum(jnp.sum(mask_f), 1.0)
 
 
+# helper when debugging inferred goal proportional action
+def mse_on_mask(x, goal, mask) -> jnp.ndarray:
+    m = mask.astype(jnp.float32)
+    err = (x - goal) * m
+    return jnp.sum(err * err) / jnp.maximum(jnp.sum(m), 1.0)
+
+
 def _neighbor_mean(values, senders, receivers, edge_mask):
     n_max = values.shape[0]
     edge_mask_f = edge_mask.astype(jnp.float32)

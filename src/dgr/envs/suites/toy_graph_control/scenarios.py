@@ -114,5 +114,25 @@ def get_scenario(name: str) -> ToyGraphControlConfig:
             goal=GoalConfig(mode="smooth", smooth_steps=8, residual_std=0.1),
         )
 
-    # TODO: later add sparse actuation variants too.
+    if name == "debug_ring_sparse_hidden_goal_leader3_smooth":
+        n_real = 8
+        return ToyGraphControlConfig(
+            spec=spec,
+            n_real=n_real,
+            dynamics=DynamicsConfig(horizon=50, alpha=0.2, beta=1.0, noise_std=0.0),
+            actuator_mask=_sparse_actuation_even(spec, n_real),
+            goal_obs_mask=_leaders_spaced(spec, n_real, leaders=3),
+            goal=GoalConfig(mode="smooth", smooth_steps=8, residual_std=0.05),
+        )
+
+    if name == "train_ring_sparse_hidden_goal_leader3_smooth":
+        n_real = 8
+        return ToyGraphControlConfig(
+            spec=spec,
+            n_real=n_real,
+            dynamics=DynamicsConfig(horizon=50, alpha=0.2, beta=0.5, noise_std=0.01),
+            actuator_mask=_sparse_actuation_even(spec, n_real),
+            goal_obs_mask=_leaders_spaced(spec, n_real, leaders=3),
+            goal=GoalConfig(mode="smooth", smooth_steps=8, residual_std=0.1),
+        )
     raise ValueError(f"Unknown scenario: {name}")
