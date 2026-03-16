@@ -14,6 +14,7 @@ from dgr.interface.graph_spec import Graph, GraphSpec, validate_graph
 
 @dataclass(frozen=True)
 class DynamicsConfig:
+    mode: str = "consensus"  # "directed_flow", "spring_mass"
     horizon: int = 50
     alpha: float = 0.2
     beta: float = 0.5
@@ -22,7 +23,7 @@ class DynamicsConfig:
 
 @dataclass(frozen=True)
 class GoalConfig:
-    mode: str = "iid"  # "iid" or "smooth"
+    mode: str = "iid"  # "iid", "smooth", "clamped_smooth"
     smooth_steps: int = 0  # number of smoothing iterations
     residual_std: float = 0.0  # add iid noise after smoothing (keeps it imperfect)
 
@@ -70,6 +71,8 @@ def make_ring_topology(
     return senders, receivers, edge_mask
 
 
+# builds the per-node target values (goal)
+# for the episode
 def _make_goal(
     key: jax.Array,
     spec: GraphSpec,
@@ -77,18 +80,18 @@ def _make_goal(
     senders: jnp.ndarray,
     receivers: jnp.ndarray,
     edge_mask: jnp.ndarray,
+    goal_obs_mask: jnp.ndarray,
     goal_cfg: GoalConfig,
 ) -> jnp.ndarray:
     key0, key_res = jax.random.split(key, 2)
 
-    goal = jax.random.normal(key0, (spec.n_max,), dtype=jnp.float32)
-    goal = jnp.where(node_mask, goal, 0.0)
-
     if goal_cfg.mode == "iid":
-        return goal
+        g = jax.random.normal(key0, (spec.n_max,), dtype=jnp.float32)
+        return jnp.where(node_mask, g, 0.0)
 
     if goal_cfg.mode == "smooth":
-        g = goal
+        g = jax.random.normal(key0, (spec.n_max,), dtype=jnp.float32)
+        g = jnp.where(node_mask, g, 0.0)
         for _ in range(int(goal_cfg.smooth_steps)):
             g = _neighbor_mean(g, senders, receivers, edge_mask)
             g = jnp.where(node_mask, g, 0.0)
@@ -97,6 +100,32 @@ def _make_goal(
                 key_res, (spec.n_max,), dtype=jnp.float32
             )
             g = jnp.where(node_mask, g + eps, 0.0)
+        return g
+
+    if goal_cfg.mode == "clamped_smooth":
+        # Visible/leader nodes define boundary conditions.
+        visible = goal_obs_mask & node_mask
+
+        # Sample goal values only on visible nodes.
+        anchor_vals = jax.random.normal(key0, (spec.n_max,), dtype=jnp.float32)
+        anchor_vals = jnp.where(visible, anchor_vals, 0.0)
+
+        g = anchor_vals
+        for _ in range(int(goal_cfg.smooth_steps)):
+            g = _neighbor_mean(g, senders, receivers, edge_mask)
+            # Clamp visible nodes back to anchor values each iteration.
+            g = jnp.where(visible, anchor_vals, g)
+            g = jnp.where(node_mask, g, 0.0)
+
+        if goal_cfg.residual_std > 0:
+            eps = goal_cfg.residual_std * jax.random.normal(
+                key_res, (spec.n_max,), dtype=jnp.float32
+            )
+            # Optional: add residual only on hidden real nodes so visible anchors stay exact.
+            hidden_real = node_mask & (~visible)
+            g = jnp.where(hidden_real, g + eps, g)
+            g = jnp.where(node_mask, g, 0.0)
+
         return g
 
     raise ValueError(f"Unknown goal_cfg.mode: {goal_cfg.mode!r}")
@@ -159,7 +188,16 @@ def reset(key: jax.Array, cfg: ToyGraphControlConfig) -> tuple[EnvState, Graph]:
     k1, k2 = jax.random.split(key, 2)
     x0 = jax.random.normal(k1, (spec.n_max,), dtype=jnp.float32)
     x0 = jnp.where(node_mask, x0, jnp.zeros_like(x0))
-    goal = _make_goal(k2, spec, node_mask, senders, receivers, edge_mask, cfg.goal)
+    goal = _make_goal(
+        k2,
+        spec,
+        node_mask,
+        senders,
+        receivers,
+        edge_mask,
+        cfg.goal_obs_mask,
+        cfg.goal,
+    )
 
     state = EnvState(
         t=jnp.array(0, dtype=jnp.int32),
