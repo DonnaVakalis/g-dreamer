@@ -264,6 +264,24 @@ def _step_spring_mass(
     raise NotImplementedError("spring_mass dynamics not implemented yet")
 
 
+def _apply_dynamics(
+    key: jax.Array,
+    cfg: ToyGraphControlConfig,
+    state: EnvState,
+    action: jnp.ndarray,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    mode = cfg.dynamics.mode
+
+    if mode == "consensus":
+        return _step_consensus(key, cfg, state, action)
+    if mode == "directed_flow":
+        return _step_directed_flow(key, cfg, state, action)
+    if mode == "spring_mass":
+        return _step_spring_mass(key, cfg, state, action)
+
+    raise ValueError(f"Unknown dynamics mode: {mode!r}")
+
+
 def step(
     key: jax.Array,
     cfg: ToyGraphControlConfig,
@@ -276,28 +294,10 @@ def step(
     if action.shape != (spec.n_max,):
         raise ValueError(f"Expected action shape {(spec.n_max,)}, got {action.shape}")
 
-    node_mask_f = state.node_mask.astype(jnp.float32)
-    edge_mask_f = state.edge_mask.astype(jnp.float32)
-    actuator_mask_f = cfg.actuator_mask.astype(jnp.float32) * node_mask_f
-
-    x = state.x
-    u = action.astype(jnp.float32) * actuator_mask_f
-
-    msgs = x[state.senders] * edge_mask_f
-    agg = jnp.zeros((spec.n_max,), dtype=jnp.float32).at[state.receivers].add(msgs)
-    deg = jnp.zeros((spec.n_max,), dtype=jnp.float32).at[state.receivers].add(edge_mask_f)
-    neigh_mean = agg / jnp.maximum(deg, 1.0)
-
-    noise = dyn.noise_std * jax.random.normal(key, (spec.n_max,), dtype=jnp.float32)
-
-    x_next = x + dyn.alpha * (neigh_mean - x) + dyn.beta * u + noise
-    x_next = jnp.where(state.node_mask, x_next, jnp.zeros_like(x_next))
+    x_next, reward = _apply_dynamics(key, cfg, state, action)
 
     t_next = state.t + jnp.array(1, dtype=jnp.int32)
     done = t_next >= jnp.array(dyn.horizon, dtype=jnp.int32)
-
-    err = (x_next - state.goal) * node_mask_f
-    reward = -jnp.sum(err * err) / jnp.maximum(jnp.sum(node_mask_f), 1.0)
 
     new_state = EnvState(
         t=t_next,
