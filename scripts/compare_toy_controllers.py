@@ -18,6 +18,7 @@ import json
 from pathlib import Path
 
 import jax
+import numpy as np
 
 from dgr.envs.suites.toy_graph_control.controllers import (
     inferred_goal_proportional_action,
@@ -104,10 +105,33 @@ def rollout(name: str, scenario_name: str, cfg, seed: int = 0, k_prop: float = 0
     }
 
 
+def aggregate_rollouts(rows):
+    return {
+        "episodes": len(rows),
+        "start_mse_mean": float(np.mean([r["start_mse"] for r in rows])),
+        "start_mse_std": float(np.std([r["start_mse"] for r in rows])),
+        "end_mse_mean": float(np.mean([r["end_mse"] for r in rows])),
+        "end_mse_std": float(np.std([r["end_mse"] for r in rows])),
+        "start_mse_ctrl_mean": float(np.mean([r["start_mse_ctrl"] for r in rows])),
+        "start_mse_ctrl_std": float(np.std([r["start_mse_ctrl"] for r in rows])),
+        "end_mse_ctrl_mean": float(np.mean([r["end_mse_ctrl"] for r in rows])),
+        "end_mse_ctrl_std": float(np.std([r["end_mse_ctrl"] for r in rows])),
+        "start_mse_unact_mean": float(np.mean([r["start_mse_unact"] for r in rows])),
+        "start_mse_unact_std": float(np.std([r["start_mse_unact"] for r in rows])),
+        "end_mse_unact_mean": float(np.mean([r["end_mse_unact"] for r in rows])),
+        "end_mse_unact_std": float(np.std([r["end_mse_unact"] for r in rows])),
+        "total_reward_mean": float(np.mean([r["total_reward"] for r in rows])),
+        "total_reward_std": float(np.std([r["total_reward"] for r in rows])),
+        "steps_mean": float(np.mean([r["steps"] for r in rows])),
+        "steps_std": float(np.std([r["steps"] for r in rows])),
+    }
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("scenario", help="Scenario name from scenarios.get_scenario()")
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--episodes", type=int, default=10)
     p.add_argument("--k-prop", type=float, default=0.5)
     p.add_argument(
         "--outdir",
@@ -123,31 +147,38 @@ def main():
     print("Scenario stats:", scenario_stats(scenario_cfg))
 
     seed = args.seed
+    episodes = args.episodes
     k_prop = args.k_prop
+    if episodes < 1:
+        raise ValueError("--episodes must be >= 1")
 
-    results = [
-        rollout("zero", scenario_name, scenario_cfg, seed=seed, k_prop=k_prop),
-        rollout("random", scenario_name, scenario_cfg, seed=seed, k_prop=k_prop),
-        rollout("proportional", scenario_name, scenario_cfg, seed=seed, k_prop=k_prop),
-        rollout("masked_proportional", scenario_name, scenario_cfg, seed=seed, k_prop=k_prop),
-        rollout("inferred_proportional", scenario_name, scenario_cfg, seed=seed, k_prop=k_prop),
+    controllers = [
+        "zero",
+        "random",
+        "proportional",
+        "masked_proportional",
+        "inferred_proportional",
     ]
+    results_by_controller = {}
+    for name in controllers:
+        rows = []
+        for episode in range(episodes):
+            row = rollout(name, scenario_name, scenario_cfg, seed=seed + episode, k_prop=k_prop)
+            row["episode"] = episode
+            rows.append(row)
+        results_by_controller[name] = rows
 
     summary = {
         "scenario": scenario_name,
         "seed": seed,
+        "episodes": episodes,
         "k_prop": k_prop,
         "results": [
             {
-                "controller": r["controller"],
-                "start_mse": r["start_mse"],
-                "end_mse": r["end_mse"],
-                "start_mse_ctrl": r["start_mse_ctrl"],
-                "end_mse_ctrl": r["end_mse_ctrl"],
-                "total_reward": r["total_reward"],
-                "steps": r["steps"],
+                "controller": name,
+                **aggregate_rollouts(rows),
             }
-            for r in results
+            for name, rows in results_by_controller.items()
         ],
     }
 
@@ -157,8 +188,17 @@ def main():
         outdir = Path(args.outdir) / scenario_name / f"seed_{seed:03d}"
         outdir.mkdir(parents=True, exist_ok=True)
 
-        for r in results:
-            (outdir / f"{r['controller']}.json").write_text(json.dumps(r, indent=2))
+        for name, rows in results_by_controller.items():
+            payload = {
+                "controller": name,
+                "scenario": scenario_name,
+                "seed": seed,
+                "episodes": episodes,
+                "k_prop": k_prop,
+                "aggregate": aggregate_rollouts(rows),
+                "runs": rows,
+            }
+            (outdir / f"{name}.json").write_text(json.dumps(payload, indent=2))
         (outdir / "summary.json").write_text(json.dumps(summary, indent=2))
 
 
