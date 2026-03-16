@@ -211,6 +211,59 @@ def reset(key: jax.Array, cfg: ToyGraphControlConfig) -> tuple[EnvState, Graph]:
     return state, observe(cfg, state)
 
 
+def _step_consensus(
+    key: jax.Array,
+    cfg: ToyGraphControlConfig,
+    state: EnvState,
+    action: jnp.ndarray,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """
+    Returns:
+      x_next, reward
+    """
+    spec = cfg.spec
+    dyn = cfg.dynamics
+
+    node_mask_f = state.node_mask.astype(jnp.float32)
+    edge_mask_f = state.edge_mask.astype(jnp.float32)
+    actuator_mask_f = cfg.actuator_mask.astype(jnp.float32) * node_mask_f
+
+    x = state.x
+    u = action.astype(jnp.float32) * actuator_mask_f
+
+    msgs = x[state.senders] * edge_mask_f
+    agg = jnp.zeros((spec.n_max,), dtype=jnp.float32).at[state.receivers].add(msgs)
+    deg = jnp.zeros((spec.n_max,), dtype=jnp.float32).at[state.receivers].add(edge_mask_f)
+    neigh_mean = agg / jnp.maximum(deg, 1.0)
+
+    noise = dyn.noise_std * jax.random.normal(key, (spec.n_max,), dtype=jnp.float32)
+
+    x_next = x + dyn.alpha * (neigh_mean - x) + dyn.beta * u + noise
+    x_next = jnp.where(state.node_mask, x_next, 0.0)
+
+    err = (x_next - state.goal) * node_mask_f
+    reward = -jnp.sum(err * err) / jnp.maximum(jnp.sum(node_mask_f), 1.0)
+    return x_next, reward
+
+
+def _step_directed_flow(
+    key: jax.Array,
+    cfg: ToyGraphControlConfig,
+    state: EnvState,
+    action: jnp.ndarray,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    raise NotImplementedError("directed_flow dynamics not implemented yet")
+
+
+def _step_spring_mass(
+    key: jax.Array,
+    cfg: ToyGraphControlConfig,
+    state: EnvState,
+    action: jnp.ndarray,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    raise NotImplementedError("spring_mass dynamics not implemented yet")
+
+
 def step(
     key: jax.Array,
     cfg: ToyGraphControlConfig,
