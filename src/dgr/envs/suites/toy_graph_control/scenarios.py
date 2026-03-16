@@ -77,7 +77,9 @@ def get_scenario(name: str) -> ToyGraphControlConfig:
         return ToyGraphControlConfig(
             spec=spec,
             n_real=n_real,
-            dynamics=DynamicsConfig(horizon=20, alpha=0.2, beta=0.5, noise_std=0.0),
+            dynamics=DynamicsConfig(
+                mode="consensus", horizon=20, alpha=0.2, beta=0.5, noise_std=0.0
+            ),
             actuator_mask=_dense_actuation(spec, n_real),
             goal_obs_mask=_all_goals_visible(spec, n_real),
         )
@@ -87,7 +89,9 @@ def get_scenario(name: str) -> ToyGraphControlConfig:
         return ToyGraphControlConfig(
             spec=spec,
             n_real=n_real,
-            dynamics=DynamicsConfig(horizon=20, alpha=0.2, beta=0.5, noise_std=0.0),
+            dynamics=DynamicsConfig(
+                mode="consensus", horizon=20, alpha=0.2, beta=0.5, noise_std=0.0
+            ),
             actuator_mask=_sparse_actuation_even(spec, n_real),
             goal_obs_mask=_all_goals_visible(spec, n_real),
         )
@@ -97,7 +101,9 @@ def get_scenario(name: str) -> ToyGraphControlConfig:
         return ToyGraphControlConfig(
             spec=spec,
             n_real=n_real,
-            dynamics=DynamicsConfig(horizon=50, alpha=0.2, beta=0.5, noise_std=0.01),
+            dynamics=DynamicsConfig(
+                mode="consensus", horizon=50, alpha=0.2, beta=0.5, noise_std=0.01
+            ),
             actuator_mask=_dense_actuation(spec, n_real),
             goal_obs_mask=_all_goals_visible(spec, n_real),
         )
@@ -107,7 +113,9 @@ def get_scenario(name: str) -> ToyGraphControlConfig:
         return ToyGraphControlConfig(
             spec=spec,
             n_real=n_real,
-            dynamics=DynamicsConfig(horizon=20, alpha=0.2, beta=0.5, noise_std=0.0),
+            dynamics=DynamicsConfig(
+                mode="consensus", horizon=20, alpha=0.2, beta=0.5, noise_std=0.0
+            ),
             actuator_mask=_dense_actuation(spec, n_real),
             goal_obs_mask=_leader_goals_visible(spec, n_real, leaders=1),
         )
@@ -117,7 +125,9 @@ def get_scenario(name: str) -> ToyGraphControlConfig:
         return ToyGraphControlConfig(
             spec=spec,
             n_real=n_real,
-            dynamics=DynamicsConfig(horizon=50, alpha=0.2, beta=0.5, noise_std=0.01),
+            dynamics=DynamicsConfig(
+                mode="consensus", horizon=50, alpha=0.2, beta=0.5, noise_std=0.01
+            ),
             actuator_mask=_dense_actuation(spec, n_real),
             goal_obs_mask=_leader_goals_visible(spec, n_real, leaders=1),
         )
@@ -127,7 +137,9 @@ def get_scenario(name: str) -> ToyGraphControlConfig:
         return ToyGraphControlConfig(
             spec=spec,
             n_real=n_real,
-            dynamics=DynamicsConfig(horizon=10, alpha=0.2, beta=0.5, noise_std=0.0),
+            dynamics=DynamicsConfig(
+                mode="consensus", horizon=10, alpha=0.2, beta=0.5, noise_std=0.0
+            ),
             actuator_mask=_dense_actuation(spec, n_real),
             goal_obs_mask=_leaders_spaced(spec, n_real, leaders=3),
             goal=GoalConfig(mode="smooth", smooth_steps=8, residual_std=0.1),
@@ -138,7 +150,9 @@ def get_scenario(name: str) -> ToyGraphControlConfig:
         return ToyGraphControlConfig(
             spec=spec,
             n_real=n_real,
-            dynamics=DynamicsConfig(horizon=50, alpha=0.2, beta=0.5, noise_std=0.01),
+            dynamics=DynamicsConfig(
+                mode="consensus", horizon=50, alpha=0.2, beta=0.5, noise_std=0.01
+            ),
             actuator_mask=_dense_actuation(spec, n_real),
             goal_obs_mask=_leaders_spaced(spec, n_real, leaders=3),
             goal=GoalConfig(mode="smooth", smooth_steps=8, residual_std=0.1),
@@ -149,7 +163,9 @@ def get_scenario(name: str) -> ToyGraphControlConfig:
         return ToyGraphControlConfig(
             spec=spec,
             n_real=n_real,
-            dynamics=DynamicsConfig(horizon=50, alpha=0.2, beta=1.0, noise_std=0.0),
+            dynamics=DynamicsConfig(
+                mode="consensus", horizon=50, alpha=0.2, beta=1.0, noise_std=0.0
+            ),
             actuator_mask=_sparse_actuation_even(spec, n_real),
             goal_obs_mask=_leaders_spaced(spec, n_real, leaders=3),
             goal=GoalConfig(mode="smooth", smooth_steps=8, residual_std=0.05),
@@ -160,7 +176,9 @@ def get_scenario(name: str) -> ToyGraphControlConfig:
         return ToyGraphControlConfig(
             spec=spec,
             n_real=n_real,
-            dynamics=DynamicsConfig(horizon=50, alpha=0.2, beta=0.5, noise_std=0.01),
+            dynamics=DynamicsConfig(
+                mode="consensus", horizon=50, alpha=0.2, beta=0.5, noise_std=0.01
+            ),
             actuator_mask=_sparse_actuation_even(spec, n_real),
             goal_obs_mask=_leaders_spaced(spec, n_real, leaders=3),
             goal=GoalConfig(mode="smooth", smooth_steps=8, residual_std=0.1),
@@ -171,12 +189,14 @@ def get_scenario(name: str) -> ToyGraphControlConfig:
         return ToyGraphControlConfig(
             spec=spec,
             n_real=n_real,
-            dynamics=DynamicsConfig(horizon=30, alpha=0.2, beta=1.0, noise_std=0.0),
+            dynamics=DynamicsConfig(
+                mode="consensus", horizon=30, alpha=0.2, beta=1.0, noise_std=0.0
+            ),
             actuator_mask=_sparse_actuation_even(spec, n_real),  # actuated = evens
             goal_obs_mask=_leaders_spaced_on_parity(
                 spec, n_real, leaders=3, parity=0
             ),  # leaders on evens
-            goal=GoalConfig(mode="smooth", smooth_steps=8, residual_std=0.05),
+            goal=GoalConfig(mode="clamped_smooth", smooth_steps=8, residual_std=0.05),
         )
 
     if name == "debug_ring_sparse_hidden_smooth_misaligned":
@@ -184,12 +204,14 @@ def get_scenario(name: str) -> ToyGraphControlConfig:
         return ToyGraphControlConfig(
             spec=spec,
             n_real=n_real,
-            dynamics=DynamicsConfig(horizon=30, alpha=0.2, beta=1.0, noise_std=0.0),
+            dynamics=DynamicsConfig(
+                mode="consensus", horizon=30, alpha=0.2, beta=1.0, noise_std=0.0
+            ),
             actuator_mask=_sparse_actuation_even(spec, n_real),  # actuated = evens
             goal_obs_mask=_leaders_spaced_on_parity(
                 spec, n_real, leaders=3, parity=1
             ),  # leaders on odds
-            goal=GoalConfig(mode="smooth", smooth_steps=8, residual_std=0.05),
+            goal=GoalConfig(mode="clamped_smooth", smooth_steps=8, residual_std=0.05),
         )
 
     if name == "train_ring_sparse_hidden_smooth_aligned":
@@ -197,10 +219,12 @@ def get_scenario(name: str) -> ToyGraphControlConfig:
         return ToyGraphControlConfig(
             spec=spec,
             n_real=n_real,
-            dynamics=DynamicsConfig(horizon=50, alpha=0.2, beta=0.5, noise_std=0.01),
+            dynamics=DynamicsConfig(
+                mode="consensus", horizon=50, alpha=0.2, beta=0.5, noise_std=0.01
+            ),
             actuator_mask=_sparse_actuation_even(spec, n_real),
             goal_obs_mask=_leaders_spaced_on_parity(spec, n_real, leaders=3, parity=0),
-            goal=GoalConfig(mode="smooth", smooth_steps=8, residual_std=0.1),
+            goal=GoalConfig(mode="clamped_smooth", smooth_steps=8, residual_std=0.1),
         )
 
     if name == "train_ring_sparse_hidden_smooth_misaligned":
@@ -208,10 +232,12 @@ def get_scenario(name: str) -> ToyGraphControlConfig:
         return ToyGraphControlConfig(
             spec=spec,
             n_real=n_real,
-            dynamics=DynamicsConfig(horizon=50, alpha=0.2, beta=0.5, noise_std=0.01),
+            dynamics=DynamicsConfig(
+                mode="consensus", horizon=50, alpha=0.2, beta=0.5, noise_std=0.01
+            ),
             actuator_mask=_sparse_actuation_even(spec, n_real),
             goal_obs_mask=_leaders_spaced_on_parity(spec, n_real, leaders=3, parity=1),
-            goal=GoalConfig(mode="smooth", smooth_steps=8, residual_std=0.1),
+            goal=GoalConfig(mode="clamped_smooth", smooth_steps=8, residual_std=0.1),
         )
 
     raise ValueError(f"Unknown scenario: {name}")
