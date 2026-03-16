@@ -22,23 +22,25 @@ import jax
 from dgr.envs.suites.toy_graph_control.controllers import (
     inferred_goal_proportional_action,
     masked_proportional_action,
+    mse_on_mask,
     mse_to_goal,
     proportional_action,
     random_action,
     zero_action,
 )
 from dgr.envs.suites.toy_graph_control.core import reset, step
-from dgr.envs.suites.toy_graph_control.scenarios import get_scenario
+from dgr.envs.suites.toy_graph_control.scenarios import get_scenario, scenario_stats
 
 
-def rollout(name: str, scenario_name: str, seed: int = 0, k_prop: float = 0.5):
-    cfg = get_scenario(scenario_name)
+def rollout(name: str, scenario_name: str, cfg, seed: int = 0, k_prop: float = 0.5):
     key = jax.random.PRNGKey(seed)
     state, obs = reset(key, cfg)
 
     history = []
     total_reward = 0.0
     start_mse = float(mse_to_goal(state.x, state.goal, state.node_mask))
+    start_mse_ctrl = float(mse_on_mask(state.x, state.goal, state.node_mask & cfg.actuator_mask))
+    start_mse_unact = float(mse_to_goal(state.x, state.goal, state.node_mask & ~cfg.actuator_mask))
 
     policy_key = jax.random.PRNGKey(123)
 
@@ -77,6 +79,8 @@ def rollout(name: str, scenario_name: str, seed: int = 0, k_prop: float = 0.5):
         step_key = jax.random.PRNGKey(t + 1)
         state, obs, reward, done = step(step_key, cfg, state, action)
         mse = mse_to_goal(state.x, state.goal, state.node_mask)
+        mse_ctrl = mse_on_mask(state.x, state.goal, state.node_mask & cfg.actuator_mask)
+        mse_unact = mse_to_goal(state.x, state.goal, state.node_mask & ~cfg.actuator_mask)
 
         history.append({"t": t, "reward": float(reward), "mse": float(mse), "done": bool(done)})
         total_reward += float(reward)
@@ -89,7 +93,11 @@ def rollout(name: str, scenario_name: str, seed: int = 0, k_prop: float = 0.5):
         "seed": seed,
         "k_prop": k_prop,
         "start_mse": start_mse,
-        "end_mse": float(mse_to_goal(state.x, state.goal, state.node_mask)),
+        "end_mse": float(mse),  # float(mse_to_goal(state.x, state.goal, state.node_mask)),
+        "start_mse_ctrl": start_mse_ctrl,
+        "end_mse_ctrl": float(mse_ctrl),
+        "start_mse_unact": float(start_mse_unact),
+        "end_mse_unact": float(mse_unact),
         "total_reward": total_reward,
         "steps": len(history),
         "history": history,
@@ -111,15 +119,18 @@ def main():
     args = p.parse_args()
 
     scenario_name = args.scenario
+    scenario_cfg = get_scenario(scenario_name)
+    print("Scenario stats:", scenario_stats(scenario_cfg))
+
     seed = args.seed
     k_prop = args.k_prop
 
     results = [
-        rollout("zero", scenario_name, seed=seed, k_prop=k_prop),
-        rollout("random", scenario_name, seed=seed, k_prop=k_prop),
-        rollout("proportional", scenario_name, seed=seed, k_prop=k_prop),
-        rollout("masked_proportional", scenario_name, seed=seed, k_prop=k_prop),
-        rollout("inferred_proportional", scenario_name, seed=seed, k_prop=k_prop),
+        rollout("zero", scenario_name, scenario_cfg, seed=seed, k_prop=k_prop),
+        rollout("random", scenario_name, scenario_cfg, seed=seed, k_prop=k_prop),
+        rollout("proportional", scenario_name, scenario_cfg, seed=seed, k_prop=k_prop),
+        rollout("masked_proportional", scenario_name, scenario_cfg, seed=seed, k_prop=k_prop),
+        rollout("inferred_proportional", scenario_name, scenario_cfg, seed=seed, k_prop=k_prop),
     ]
 
     summary = {
@@ -131,6 +142,8 @@ def main():
                 "controller": r["controller"],
                 "start_mse": r["start_mse"],
                 "end_mse": r["end_mse"],
+                "start_mse_ctrl": r["start_mse_ctrl"],
+                "end_mse_ctrl": r["end_mse_ctrl"],
                 "total_reward": r["total_reward"],
                 "steps": r["steps"],
             }
