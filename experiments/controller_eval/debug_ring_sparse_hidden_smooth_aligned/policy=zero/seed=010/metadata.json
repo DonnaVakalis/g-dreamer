@@ -1,0 +1,10 @@
+{
+  "run_type": "controller_eval",
+  "scenario": "debug_ring_sparse_hidden_smooth_aligned",
+  "policy_or_agent": "zero",
+  "seed": 10,
+  "variant": "kprop0.5",
+  "episodes": 10,
+  "run_steps": null,
+  "timestamp": null
+}

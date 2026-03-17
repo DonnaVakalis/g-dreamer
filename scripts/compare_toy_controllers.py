@@ -31,6 +31,8 @@ from dgr.envs.suites.toy_graph_control.controllers import (
 )
 from dgr.envs.suites.toy_graph_control.core import reset, step
 from dgr.envs.suites.toy_graph_control.scenarios import get_scenario, scenario_stats
+from dgr.experiments.metadata import ExperimentMetadata
+from dgr.experiments.naming import canonical_policy_name, controller_eval_dir
 
 
 def rollout(name: str, scenario_name: str, cfg, seed: int = 0, k_prop: float = 0.5):
@@ -136,8 +138,8 @@ def main():
     p.add_argument(
         "--outdir",
         type=str,
-        default="experiments/toy_debug",
-        help="Base output dir (scenario/seed_xxx will be created under this).",
+        default="experiments/controller_eval",
+        help="Base output dir for controller evaluation artifacts).",
     )
     p.add_argument("--no-write", action="store_true", help="Do not write json files.")
     args = p.parse_args()
@@ -185,21 +187,27 @@ def main():
     print(json.dumps(summary, indent=2))
 
     if not args.no_write:
-        outdir = Path(args.outdir) / scenario_name / f"seed_{seed:03d}"
-        outdir.mkdir(parents=True, exist_ok=True)
+        # Scenario-level summary dir
+        scenario_dir = Path(args.outdir) / scenario_name / f"seed={seed:03d}"
+        scenario_dir.mkdir(parents=True, exist_ok=True)
+        (scenario_dir / "scenario_summary.json").write_text(json.dumps(summary, indent=2))
 
-        for name, rows in results_by_controller.items():
-            payload = {
-                "controller": name,
-                "scenario": scenario_name,
-                "seed": seed,
-                "episodes": episodes,
-                "k_prop": k_prop,
-                "aggregate": aggregate_rollouts(rows),
-                "runs": rows,
-            }
-            (outdir / f"{name}.json").write_text(json.dumps(payload, indent=2))
-        (outdir / "summary.json").write_text(json.dumps(summary, indent=2))
+        # Per-controller dirs with metadata
+        for name, r in results_by_controller.items():
+            meta = ExperimentMetadata(
+                run_type="controller_eval",
+                scenario=scenario_name,
+                policy_or_agent=canonical_policy_name(name),
+                seed=seed,
+                variant=f"kprop{args.k_prop}",
+                episodes=args.episodes,
+            )
+
+            outdir = controller_eval_dir(args.outdir, meta)
+            outdir.mkdir(parents=True, exist_ok=True)
+
+            (outdir / "summary.json").write_text(json.dumps(r, indent=2))
+            (outdir / "metadata.json").write_text(json.dumps(meta.to_dict(), indent=2))
 
 
 if __name__ == "__main__":
