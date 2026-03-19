@@ -1,5 +1,13 @@
-experiments/runs/
-experiments/toy_debug/
+# experiment outputs
+experiments/**
+!experiments/analysis/
+!experiments/analysis/.gitkeep
+!experiments/runs/
+!experiments/runs/.gitkeep
+!experiments/sweeps/
+!experiments/sweeps/.gitkeep
+!experiments/toy_debug/
+wandb/
 CLAUDE.md
 
 # python

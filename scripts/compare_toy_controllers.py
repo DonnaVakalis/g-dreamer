@@ -20,6 +20,7 @@ from pathlib import Path
 import jax
 import numpy as np
 
+import wandb
 from dgr.envs.suites.toy_graph_control.controllers import (
     inferred_goal_proportional_action,
     masked_proportional_action,
@@ -33,6 +34,7 @@ from dgr.envs.suites.toy_graph_control.core import reset, step
 from dgr.envs.suites.toy_graph_control.scenarios import get_scenario, scenario_stats
 from dgr.experiments.metadata import ExperimentMetadata
 from dgr.experiments.naming import canonical_policy_name, controller_eval_dir
+from dgr.experiments.wandb_utils import wandb_init_kwargs
 
 
 def rollout(name: str, scenario_name: str, cfg, seed: int = 0, k_prop: float = 0.5):
@@ -142,6 +144,7 @@ def main():
         help="Base output dir for controller evaluation artifacts).",
     )
     p.add_argument("--no-write", action="store_true", help="Do not write json files.")
+    p.add_argument("--wandb", action="store_true", help="Log results to Weights & Biases.")
     args = p.parse_args()
 
     scenario_name = args.scenario
@@ -184,6 +187,8 @@ def main():
         ],
     }
 
+    summary_by_controller = {row["controller"]: row for row in summary["results"]}
+
     print(json.dumps(summary, indent=2))
 
     if not args.no_write:
@@ -194,6 +199,8 @@ def main():
 
         # Per-controller dirs with metadata
         for name, r in results_by_controller.items():
+            agg = summary_by_controller[name]
+
             meta = ExperimentMetadata(
                 run_type="controller_eval",
                 scenario=scenario_name,
@@ -206,8 +213,34 @@ def main():
             outdir = controller_eval_dir(args.outdir, meta)
             outdir.mkdir(parents=True, exist_ok=True)
 
-            (outdir / "summary.json").write_text(json.dumps(r, indent=2))
+            # Save per-controller aggregate summary
+            (outdir / "summary.json").write_text(json.dumps(agg, indent=2))
             (outdir / "metadata.json").write_text(json.dumps(meta.to_dict(), indent=2))
+
+            # #DEBUG save raw episode rows too
+            # (outdir / "episodes.json").write_text(json.dumps(rows, indent=2))
+
+            if args.wandb:
+                stats = scenario_stats(scenario_cfg)
+                wb_kwargs = wandb_init_kwargs(meta)
+                wb_kwargs["config"] = {**wb_kwargs["config"], **stats}
+                with wandb.init(**wb_kwargs) as run:
+                    run.log(
+                        {
+                            "end_mse_mean": agg["end_mse_mean"],
+                            "end_mse_std": agg["end_mse_std"],
+                            "total_reward_mean": agg["total_reward_mean"],
+                            "total_reward_std": agg["total_reward_std"],
+                            "start_mse_mean": agg["start_mse_mean"],
+                            "start_mse_std": agg["start_mse_std"],
+                            "start_mse_ctrl_mean": agg["start_mse_ctrl_mean"],
+                            "end_mse_ctrl_mean": agg["end_mse_ctrl_mean"],
+                            "start_mse_unact_mean": agg["start_mse_unact_mean"],
+                            "end_mse_unact_mean": agg["end_mse_unact_mean"],
+                            "steps_mean": agg["steps_mean"],
+                            "steps_std": agg["steps_std"],
+                        }
+                    )
 
 
 if __name__ == "__main__":
