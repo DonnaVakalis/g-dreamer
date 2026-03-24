@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import jax
@@ -35,6 +37,39 @@ from dgr.envs.suites.toy_graph_control.scenarios import get_scenario, scenario_s
 from dgr.experiments.metadata import ExperimentMetadata
 from dgr.experiments.naming import canonical_policy_name, controller_eval_dir
 from dgr.experiments.wandb_utils import wandb_init_kwargs
+
+_EPISODE_LOG_KEYS = (
+    "controller",
+    "scenario",
+    "seed",
+    "episode",
+    "k_prop",
+    "start_mse",
+    "end_mse",
+    "start_mse_ctrl",
+    "end_mse_ctrl",
+    "start_mse_unact",
+    "end_mse_unact",
+    "total_reward",
+    "steps",
+)
+
+
+def compact_episode_row(row: dict) -> dict:
+    """Per-episode metrics without step history (smaller JSON, publication-friendly)."""
+    return {k: row[k] for k in _EPISODE_LOG_KEYS if k in row}
+
+
+def _git_revision() -> str | None:
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=Path(__file__).resolve().parents[1],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
 
 
 def rollout(name: str, scenario_name: str, cfg, seed: int = 0, k_prop: float = 0.5):
@@ -191,15 +226,24 @@ def main():
 
     print(json.dumps(summary, indent=2))
 
+    git_rev = _git_revision()
+    run_metadata_base = {
+        "scenario": scenario_name,
+        "git_revision": git_rev,
+        "argv": sys.argv,
+    }
+
     if not args.no_write:
         # Scenario-level summary dir
         scenario_dir = Path(args.outdir) / scenario_name / f"seed={seed:03d}"
         scenario_dir.mkdir(parents=True, exist_ok=True)
-        (scenario_dir / "scenario_summary.json").write_text(json.dumps(summary, indent=2))
+        scenario_record = {**summary, **run_metadata_base}
+        (scenario_dir / "scenario_summary.json").write_text(json.dumps(scenario_record, indent=2))
 
         # Per-controller dirs with metadata
-        for name, r in results_by_controller.items():
+        for name, rows in results_by_controller.items():
             agg = summary_by_controller[name]
+            compact_episodes = [compact_episode_row(r) for r in rows]
 
             meta = ExperimentMetadata(
                 run_type="controller_eval",
@@ -213,34 +257,72 @@ def main():
             outdir = controller_eval_dir(args.outdir, meta)
             outdir.mkdir(parents=True, exist_ok=True)
 
-            # Save per-controller aggregate summary
-            (outdir / "summary.json").write_text(json.dumps(agg, indent=2))
-            (outdir / "metadata.json").write_text(json.dumps(meta.to_dict(), indent=2))
+            controller_record = {
+                "controller": name,
+                "aggregate": agg,
+                "episodes": compact_episodes,
+            }
+            (outdir / "summary.json").write_text(json.dumps(controller_record, indent=2))
+            (outdir / "episodes.jsonl").write_text(
+                "".join(json.dumps(e) + "\n" for e in compact_episodes)
+            )
+            meta_dict = {**meta.to_dict(), **run_metadata_base}
+            (outdir / "metadata.json").write_text(json.dumps(meta_dict, indent=2))
 
-            # #DEBUG save raw episode rows too
-            # (outdir / "episodes.json").write_text(json.dumps(rows, indent=2))
-
-            if args.wandb:
-                stats = scenario_stats(scenario_cfg)
-                wb_kwargs = wandb_init_kwargs(meta)
-                wb_kwargs["config"] = {**wb_kwargs["config"], **stats}
-                with wandb.init(**wb_kwargs) as run:
+    if args.wandb:
+        for name, rows in results_by_controller.items():
+            agg = summary_by_controller[name]
+            meta = ExperimentMetadata(
+                run_type="controller_eval",
+                scenario=scenario_name,
+                policy_or_agent=canonical_policy_name(name),
+                seed=seed,
+                variant=f"kprop{args.k_prop}",
+                episodes=args.episodes,
+            )
+            stats = scenario_stats(scenario_cfg)
+            wb_kwargs = wandb_init_kwargs(meta)
+            wb_kwargs["config"] = {
+                **wb_kwargs["config"],
+                **stats,
+                **({} if git_rev is None else {"git_revision": git_rev}),
+            }
+            with wandb.init(**wb_kwargs) as run:
+                for row in rows:
+                    ep = int(row["episode"])
+                    c = compact_episode_row(row)
                     run.log(
                         {
-                            "end_mse_mean": agg["end_mse_mean"],
-                            "end_mse_std": agg["end_mse_std"],
-                            "total_reward_mean": agg["total_reward_mean"],
-                            "total_reward_std": agg["total_reward_std"],
-                            "start_mse_mean": agg["start_mse_mean"],
-                            "start_mse_std": agg["start_mse_std"],
-                            "start_mse_ctrl_mean": agg["start_mse_ctrl_mean"],
-                            "end_mse_ctrl_mean": agg["end_mse_ctrl_mean"],
-                            "start_mse_unact_mean": agg["start_mse_unact_mean"],
-                            "end_mse_unact_mean": agg["end_mse_unact_mean"],
-                            "steps_mean": agg["steps_mean"],
-                            "steps_std": agg["steps_std"],
-                        }
+                            "episode/total_reward": c["total_reward"],
+                            "episode/end_mse": c["end_mse"],
+                            "episode/end_mse_ctrl": c["end_mse_ctrl"],
+                            "episode/end_mse_unact": c["end_mse_unact"],
+                            "episode/steps": c["steps"],
+                            "episode/start_mse": c["start_mse"],
+                        },
+                        step=ep,
                     )
+                run.log(
+                    {
+                        "aggregate/end_mse_mean": agg["end_mse_mean"],
+                        "aggregate/end_mse_std": agg["end_mse_std"],
+                        "aggregate/total_reward_mean": agg["total_reward_mean"],
+                        "aggregate/total_reward_std": agg["total_reward_std"],
+                        "aggregate/start_mse_mean": agg["start_mse_mean"],
+                        "aggregate/start_mse_std": agg["start_mse_std"],
+                        "aggregate/start_mse_ctrl_mean": agg["start_mse_ctrl_mean"],
+                        "aggregate/start_mse_ctrl_std": agg["start_mse_ctrl_std"],
+                        "aggregate/end_mse_ctrl_mean": agg["end_mse_ctrl_mean"],
+                        "aggregate/end_mse_ctrl_std": agg["end_mse_ctrl_std"],
+                        "aggregate/start_mse_unact_mean": agg["start_mse_unact_mean"],
+                        "aggregate/start_mse_unact_std": agg["start_mse_unact_std"],
+                        "aggregate/end_mse_unact_mean": agg["end_mse_unact_mean"],
+                        "aggregate/end_mse_unact_std": agg["end_mse_unact_std"],
+                        "aggregate/steps_mean": agg["steps_mean"],
+                        "aggregate/steps_std": agg["steps_std"],
+                    },
+                    step=episodes,
+                )
 
 
 if __name__ == "__main__":

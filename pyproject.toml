@@ -11,11 +11,13 @@ jax = "0.4.33"
 numpy = "<2"
 jaxlib = "0.4.33"
 wandb = "^0.25.1"
+pyyaml = "^6.0.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.0.2"
 ruff = "^0.15.1"
 pre-commit = "^4.5.1"
+types-PyYAML = "^6.0.12"
 
 
 [tool.poetry.group.upstream.dependencies]
@@ -44,6 +46,9 @@ select = ["E", "F", "I"]
 testpaths = ["tests"]
 norecursedirs = ["third_party"]
 addopts = "-ra"
+
+[tool.mypy]
+python_version = "3.11"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
