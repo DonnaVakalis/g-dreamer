@@ -20,8 +20,8 @@ from pathlib import Path
 
 import jax
 import numpy as np
-
 import wandb
+
 from dgr.envs.suites.toy_graph_control.controllers import (
     inferred_goal_proportional_action,
     masked_proportional_action,

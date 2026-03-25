@@ -38,9 +38,14 @@ gym = "^0.26.2"
 [tool.ruff]
 line-length = 100
 exclude = ["third_party/**"]
+src = ["src"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["dgr"]
+known-third-party = ["wandb"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
