@@ -52,7 +52,10 @@ class ToyConsensusGymEnv(gym.Env):
         d = flat_dim(self.cfg.spec)
 
         self.observation_space = gym.spaces.Dict(
-            {"vector": gym.spaces.Box(-np.inf, np.inf, (d,), np.float32)}
+            {
+                "vector": gym.spaces.Box(-np.inf, np.inf, (d,), np.float32),
+                "log/end_mse": gym.spaces.Box(-np.inf, np.inf, (), np.float32),
+            }
         )
         self.action_space = gym.spaces.Box(
             low=-1.0,
@@ -79,7 +82,7 @@ class ToyConsensusGymEnv(gym.Env):
             k = self._next_key()
             self._state, g = jax_reset(k, self.cfg)
             vec = flatten_graph(g, self.cfg.spec)
-            return {"vector": np.asarray(vec, dtype=np.float32)}
+            return {"vector": np.asarray(vec, dtype=np.float32), "log/end_mse": np.float32(0.0)}
 
     def step(self, action):
         with jax.transfer_guard("allow"):
@@ -90,7 +93,10 @@ class ToyConsensusGymEnv(gym.Env):
             self._state, g, reward, done = jax_step(k, self.cfg, self._state, act)
             vec = flatten_graph(g, self.cfg.spec)
             return (
-                {"vector": np.asarray(vec, dtype=np.float32)},
+                {
+                    "vector": np.asarray(vec, dtype=np.float32),
+                    "log/end_mse": np.float32(-reward if done else 0.0),
+                },
                 float(reward),
                 bool(done),
                 {"is_terminal": bool(done)},

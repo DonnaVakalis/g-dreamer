@@ -116,6 +116,15 @@ def _run_upstream_dreamerv3(spec: RunSpec) -> int:
     return proc.returncode
 
 
+def _toy_env_to_scenario(env: str) -> str:
+    from dgr.envs.adapters.toy_graph_control_gym import SCENARIO_TO_ENV_ID
+
+    task = _toy_env_to_task(env)
+    gym_id = task[len("gym_") :]
+    inv = {v: k for k, v in SCENARIO_TO_ENV_ID.items()}
+    return inv[gym_id]
+
+
 def _toy_env_to_task(env: str) -> str:
     mapping = {
         "toy_consensus_debug_dense": f"gym_{env_id_for_scenario('debug_ring_dense')}",
@@ -152,7 +161,16 @@ def _run_upstream_toy_gym(spec: RunSpec) -> int:
         *spec.extra_upstream_args,
     ]
 
-    env = os.environ.copy()
+    if "--logger.outputs" not in spec.extra_upstream_args:
+        cmd += ["--logger.outputs", "jsonl", "wandb"]
+
+    scenario = _toy_env_to_scenario(spec.env)
+    env = {
+        **os.environ.copy(),
+        "WANDB_PROJECT": "g-dreamer",
+        "WANDB_RUN_GROUP": scenario,
+        "WANDB_JOB_TYPE": "dreamer_train",
+    }
 
     print("\n[dgr.train] Running upstream DreamerV3 baseline on toy Gym env")
     print(f"[dgr.train] logdir: {spec.logdir}")
