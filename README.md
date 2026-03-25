@@ -3,7 +3,7 @@
 
 Graph-structured world models for reinforcement learning, extending [DreamerV3](https://github.com/danijar/dreamerv3) to problems that lend themselves to graph representations. Supports single- and multi-agent settings. the main experiment axes are: Topology (e.g., variable sizes, asymmetric weights ...) / Observability (e.g., full state + full goal, hidden goals, local-only sensing) / Actuation (sparse, unaligned vs aligned actuation or observability) / Dynamics (diffusion, advection, waves, switching, hybrid).
 
-> **Status: early development.** The graph observation contract, message-passing primitives, and consensus toy environment are implemented. Agent and adapter modules are stubs.
+> **Status: early development.** Minimal world model training and a first generalization demo are in place; the broader graph-Dreamer stack is still being built out.
 
 ---
 
@@ -34,6 +34,21 @@ Run tests:
 ```bash
 pytest
 ```
+
+## Architecture
+
+At a high level, the graph world model is intended to follow a message-passing Dreamer loop:
+
+```mermaid
+flowchart LR
+    A[Graph Obs] --> B[GNN Encoder]
+    B --> C[Latent + Action]
+    D[Action] --> C
+    C --> E[GNN Dynamics]
+    E --> F[Decoded Prediction]
+```
+
+Current scaffolding for this path lives in `src/dgr/agents/graph_dreamerv3/encoders/gnn.py`, `src/dgr/agents/graph_dreamerv3/rssm_gnn.py`, and `src/dgr/agents/graph_dreamerv3/world_model.py`.
 
 ## Structure
 
