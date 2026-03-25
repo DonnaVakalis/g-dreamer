@@ -163,13 +163,18 @@ def _run_upstream_toy_gym(spec: RunSpec) -> int:
 
     if "--logger.outputs" not in spec.extra_upstream_args:
         cmd += ["--logger.outputs", "jsonl", "wandb"]
+    if "--run.log_every" not in spec.extra_upstream_args:
+        cmd += ["--run.log_every", "1"]
 
     scenario = _toy_env_to_scenario(spec.env)
+    variant = configs[0]  # "debug" or "size1m"
     env = {
         **os.environ.copy(),
         "WANDB_PROJECT": "g-dreamer",
         "WANDB_RUN_GROUP": scenario,
         "WANDB_JOB_TYPE": "dreamer_train",
+        "DGR_WANDB_SCENARIO": scenario,
+        "DGR_WANDB_VARIANT": variant,
     }
 
     print("\n[dgr.train] Running upstream DreamerV3 baseline on toy Gym env")
