@@ -1,7 +1,6 @@
 """
 Compares the performance of different toy controllers
 on the toy graph control environment.
-
 Run any scenario + seed from the command line,
 and optionally write outputs to a predictable folder.
 
