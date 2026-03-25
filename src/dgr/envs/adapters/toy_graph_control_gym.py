@@ -26,6 +26,10 @@ SCENARIO_TO_ENV_ID = {
     "debug_ring_dense": "DGRToyConsensusDebugDense-v0",
     "debug_ring_sparse": "DGRToyConsensusDebugSparse-v0",
     "train_ring_dense": "DGRToyConsensusTrainDense-v0",
+    "train_ring_sparse_hidden_smooth_aligned": "DGRToyConsensusTrainSparseHiddenSmoothAligned-v0",
+    "train_ring_sparse_hidden_smooth_misaligned": (
+        "DGRToyConsensusTrainSparseHiddenSmoothMisaligned-v0"
+    ),
 }
 
 

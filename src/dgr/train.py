@@ -67,7 +67,10 @@ def _env_to_upstream_configs(env: str) -> List[str]:
         # "atari_debug": ["atari", "debug"],
     }
     if env not in mapping:
-        raise ValueError(f"Unknown env={env!r}. Supported: {', '.join(sorted(mapping))}")
+        raise ValueError(
+            f"Unknown env={env!r}. \
+            Supported: {', '.join(sorted(mapping))}"
+        )
     return mapping[env]
 
 
@@ -130,6 +133,12 @@ def _toy_env_to_task(env: str) -> str:
         "toy_consensus_debug_dense": f"gym_{env_id_for_scenario('debug_ring_dense')}",
         "toy_consensus_debug_sparse": f"gym_{env_id_for_scenario('debug_ring_sparse')}",
         "toy_consensus_train_dense": f"gym_{env_id_for_scenario('train_ring_dense')}",
+        "toy_consensus_train_sparse_hidden_smooth_aligned": (
+            f"gym_{env_id_for_scenario('train_ring_sparse_hidden_smooth_aligned')}"
+        ),
+        "toy_consensus_train_sparse_hidden_smooth_misaligned": (
+            f"gym_{env_id_for_scenario('train_ring_sparse_hidden_smooth_misaligned')}"
+        ),
         # keep old name temporarily for backward compatibility
         "toy_consensus_debug": f"gym_{env_id_for_scenario('train_ring_dense')}",
     }
