@@ -18,7 +18,11 @@ set -euo pipefail
 REPO="/network/scratch/d/$USER/g_dreamer"
 cd "$REPO"
 
-module load python/3.11
+module load miniconda/3
+# shellcheck disable=SC1091
+source "$(conda info --base)/etc/profile.d/conda.sh"
+conda activate gdreamer
+
 export PATH="$HOME/.local/bin:$PATH"
 
 SEED=$SLURM_ARRAY_TASK_ID
