@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-REPO="/network/scratch/$USER/g_dreamer"
+REPO="/network/scratch/d/$USER/g_dreamer"
 cd "$REPO"
 
 module load python/3.11
