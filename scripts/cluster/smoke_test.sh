@@ -12,9 +12,8 @@ set -euo pipefail
 REPO="/network/scratch/d/$USER/g_dreamer"
 cd "$REPO"
 
-module load miniconda/3
 # shellcheck disable=SC1091
-source "$(conda info --base)/etc/profile.d/conda.sh"
+source "$HOME/miniconda3/etc/profile.d/conda.sh"
 conda activate gdreamer
 
 export PATH="$HOME/.local/bin:$PATH"
