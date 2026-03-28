@@ -37,4 +37,8 @@ pip install --quiet poetry
 cd "$REPO"
 poetry install --with dev,upstream
 
+# Replace CPU jaxlib with CUDA 12 build (driver 13.0 is backwards compatible)
+pip install --upgrade "jax[cuda12]==0.4.33" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+
 echo "Setup complete. Python: $(python --version)"
+echo "JAX devices: $(python -c 'import jax; print(jax.devices())')"
