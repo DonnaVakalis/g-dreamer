@@ -225,6 +225,7 @@ def _log_to_wandb(
     meta: ExperimentMetadata,
     logdir: Path,
     episodes: int,
+    train_seed: int = 0,
 ) -> None:
     import wandb
 
@@ -241,6 +242,7 @@ def _log_to_wandb(
     wb_kwargs["config"] = {
         **wb_kwargs["config"],
         **stats,
+        "train_seed": train_seed,
         "dreamer_logdir": str(logdir),
         **({"git_revision": git_rev} if git_rev else {}),
     }
@@ -281,7 +283,8 @@ def main() -> None:
     scenario = args.scenario or _infer_scenario(logdir, dreamer_config)
     variant = _infer_size_label(dreamer_config)
     agent_name = canonical_policy_name(_infer_agent_name(dreamer_config))
-    seed = int(getattr(dreamer_config, "seed", args.seed))
+    train_seed = int(getattr(dreamer_config, "seed", 0))
+    eval_seed = args.seed
 
     obs_space, act_space = _make_obs_act_spaces(scenario, dreamer_config)
     agent = _make_agent(logdir, obs_space, act_space, dreamer_config)
@@ -291,7 +294,7 @@ def main() -> None:
     gym_env = ToyConsensusGymEnv(scenario_name=scenario)
     rows = []
     for i in range(args.episodes):
-        row = _run_episode(agent, gym_env, episode_seed=seed + i)
+        row = _run_episode(agent, gym_env, episode_seed=eval_seed + i)
         rows.append(row)
         print(f"ep {i:3d}: end_mse={row['end_mse']:.4f}  total_reward={row['total_reward']:.3f}")
     gym_env.close()
@@ -304,11 +307,11 @@ def main() -> None:
             run_type="dreamer_eval",
             scenario=scenario,
             policy_or_agent=agent_name,
-            seed=seed,
+            seed=eval_seed,
             variant=variant,
             episodes=args.episodes,
         ).with_timestamp()
-        _log_to_wandb(rows, agg, meta, logdir, args.episodes)
+        _log_to_wandb(rows, agg, meta, logdir, args.episodes, train_seed=train_seed)
 
 
 if __name__ == "__main__":
