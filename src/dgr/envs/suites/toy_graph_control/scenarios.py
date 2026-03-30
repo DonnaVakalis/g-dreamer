@@ -277,6 +277,30 @@ def get_scenario(name: str) -> ToyGraphControlConfig:
             goal=GoalConfig(mode="clamped_smooth", smooth_steps=8, residual_std=0.1),
         )
 
+    if name == "eval_ring_dense":
+        n_real = 5
+        return ToyGraphControlConfig(
+            spec=spec,
+            n_real=n_real,
+            dynamics=DynamicsConfig(
+                mode="consensus", horizon=50, alpha=0.2, beta=0.5, noise_std=0.01
+            ),
+            actuator_mask=_dense_actuation(spec, n_real),
+            goal_obs_mask=_all_goals_visible(spec, n_real),
+        )
+
+    if name == "eval_ring_dense_ood":
+        n_real = 7
+        return ToyGraphControlConfig(
+            spec=spec,
+            n_real=n_real,
+            dynamics=DynamicsConfig(
+                mode="consensus", horizon=50, alpha=0.2, beta=0.5, noise_std=0.01
+            ),
+            actuator_mask=_dense_actuation(spec, n_real),
+            goal_obs_mask=_all_goals_visible(spec, n_real),
+        )
+
     raise ValueError(f"Unknown scenario: {name}")
 
 

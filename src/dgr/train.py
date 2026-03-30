@@ -74,9 +74,10 @@ def _env_to_upstream_configs(env: str) -> List[str]:
     return mapping[env]
 
 
-def _default_logdir(agent: str, env: str) -> Path:
+def _default_logdir(agent: str, env: str, seed: int | None = None) -> Path:
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return Path("experiments") / "runs" / f"{env}__{agent}__{stamp}"
+    suffix = f"__seed{seed}" if seed is not None else ""
+    return Path("experiments") / "runs" / f"{env}__{agent}__{stamp}{suffix}"
 
 
 def _run_upstream_dreamerv3(spec: RunSpec) -> int:
@@ -203,7 +204,8 @@ def main(argv: List[str] | None = None) -> int:
     agent = kv.get("agent", "baseline")
     env = kv.get("env", "crafter_debug")
     steps = int(kv.get("steps", "2000"))
-    logdir = Path(kv["logdir"]) if "logdir" in kv else _default_logdir(agent, env)
+    seed = int(rest[rest.index("--seed") + 1]) if "--seed" in rest else None
+    logdir = Path(kv["logdir"]) if "logdir" in kv else _default_logdir(agent, env, seed)
 
     spec = RunSpec(
         agent=agent,

@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=gdreamer-train
-#SBATCH --output=%x_%A_%a.out
-#SBATCH --error=%x_%A_%a.err
+#SBATCH --output=logs/slurm/%x_%A_%a.out
+#SBATCH --error=logs/slurm/%x_%A_%a.err
 #SBATCH --time=48:00:00
 #SBATCH --mem=32G
 #SBATCH --cpus-per-task=4
