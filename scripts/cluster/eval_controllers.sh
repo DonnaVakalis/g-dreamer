@@ -26,7 +26,7 @@ conda activate gdreamer
 export PATH="$HOME/.local/bin:$PATH"
 
 SCENARIO="${SCENARIO:-eval_ring_dense}"
-EPISODES="${EPISODES:-20}"
+EPISODES="${EPISODES:-100}"
 EVAL_SEED_BASE="${EVAL_SEED_BASE:-100}"
 
 EVAL_SEED=$(( EVAL_SEED_BASE + SLURM_ARRAY_TASK_ID ))

@@ -31,7 +31,7 @@ export PATH="$HOME/.local/bin:$PATH"
 N_TRAIN_SEEDS="${N_TRAIN_SEEDS:-5}"
 N_EVAL_SEEDS="${N_EVAL_SEEDS:-5}"
 EVAL_SEED_BASE="${EVAL_SEED_BASE:-100}"
-EPISODES="${EPISODES:-20}"
+EPISODES="${EPISODES:-100}"
 SCENARIO="${SCENARIO:-eval_ring_dense}"
 PATTERN="${PATTERN:-toy_consensus_train_dense__baseline__}"
 
