@@ -12,6 +12,7 @@
 #   sbatch train_dreamer.sh                          # train_ring_dense, seeds 0-4
 #   sbatch --array=0 train_dreamer.sh                # single seed (smoke test of real run)
 #   ENV=toy_consensus_train_sparse_hidden_smooth_aligned sbatch train_dreamer.sh
+#   AGENT=graph_encoder sbatch --array=0 train_dreamer.sh
 
 set -euo pipefail
 
@@ -25,13 +26,15 @@ conda activate gdreamer
 export PATH="$HOME/.local/bin:$PATH"
 
 SEED=$SLURM_ARRAY_TASK_ID
+AGENT="${AGENT:-baseline}"
 ENV="${ENV:-toy_consensus_train_dense}"
 STEPS="${STEPS:-1000000}"
 
-echo "Job $SLURM_JOB_ID  array=$SLURM_ARRAY_TASK_ID  env=$ENV  steps=$STEPS  seed=$SEED"
+echo "Job $SLURM_JOB_ID  array=$SLURM_ARRAY_TASK_ID  agent=$AGENT  env=$ENV  steps=$STEPS  seed=$SEED"
 echo "GPU: $(nvidia-smi --query-gpu=gpu_name --format=csv,noheader 2>/dev/null || echo none)"
 
 poetry run python -m dgr.train \
+    agent="$AGENT" \
     env="$ENV" \
     steps="$STEPS" \
     --seed "$SEED"
