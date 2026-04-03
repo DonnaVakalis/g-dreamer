@@ -195,6 +195,60 @@ def _run_upstream_toy_gym(spec: RunSpec) -> int:
     return proc.returncode
 
 
+def _run_graph_encoder_toy(spec: RunSpec, *, enc_type: str, agent_name: str) -> int:
+    """
+    Runs the encoder-swap Dreamer variant on the toy environment.
+
+    The important staging choice is that only the encoder changes here. We still
+    run Dreamer's standard RSSM and optimization loop so the experiment isolates
+    representation quality rather than bundling encoder and dynamics changes.
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    spec.logdir.mkdir(parents=True, exist_ok=True)
+    configs = ["debug"] if "debug" in spec.env else ["size1m"]
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "dgr.run_graph_dreamer_toy",
+        "--logdir",
+        str(spec.logdir),
+        "--configs",
+        *configs,
+        "--task",
+        _toy_env_to_task(spec.env),
+        "--run.steps",
+        str(spec.steps),
+        "--agent.enc.typ",
+        enc_type,
+        *spec.extra_upstream_args,
+    ]
+
+    if "--logger.outputs" not in spec.extra_upstream_args:
+        cmd += ["--logger.outputs", "jsonl", "wandb"]
+    if "--run.log_every" not in spec.extra_upstream_args:
+        cmd += ["--run.log_every", "1"]
+
+    scenario = _toy_env_to_scenario(spec.env)
+    variant = configs[0]
+    env = {
+        **os.environ.copy(),
+        "WANDB_PROJECT": "g-dreamer",
+        "WANDB_RUN_GROUP": scenario,
+        "WANDB_JOB_TYPE": "dreamer_train",
+        "DGR_WANDB_SCENARIO": scenario,
+        "DGR_WANDB_VARIANT": variant,
+        "DGR_WANDB_AGENT": agent_name,
+    }
+
+    print("\n[dgr.train] Running encoder-swap Dreamer on toy Gym env")
+    print(f"[dgr.train] logdir: {spec.logdir}")
+    print(f"[dgr.train] cmd: {' '.join(cmd)}\n")
+
+    proc = subprocess.run(cmd, cwd=str(repo_root), env=env)
+    return proc.returncode
+
+
 def main(argv: List[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
 
@@ -223,7 +277,17 @@ def main(argv: List[str] | None = None) -> int:
             pass
         return _run_upstream_dreamerv3(spec)
 
-    raise ValueError(f"Unknown agent={spec.agent!r}. Supported: baseline (for now).")
+    if spec.agent == "graph_flat":
+        _toy_env_to_task(spec.env)
+        return _run_graph_encoder_toy(spec, enc_type="simple", agent_name="dreamer_flat")
+
+    if spec.agent == "graph_encoder":
+        _toy_env_to_task(spec.env)
+        return _run_graph_encoder_toy(spec, enc_type="graph", agent_name="dreamer_gnnenc")
+
+    raise ValueError(
+        f"Unknown agent={spec.agent!r}. Supported: baseline, graph_flat, graph_encoder."
+    )
 
 
 if __name__ == "__main__":

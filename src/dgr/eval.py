@@ -100,9 +100,14 @@ def _infer_size_label(cfg: dict[str, Any]) -> str:
     return _SIZE_SIGNATURES.get((deter, depth, units), "custom")
 
 
-def _infer_agent_name(cfg: dict[str, Any]) -> str:
+def _infer_agent_name(cfg: dict[str, Any], run_dir: Path | None = None) -> str:
     if bool(cfg.get("random_agent", False)):
         return "random"
+    enc_typ = str(cfg.get("agent", {}).get("enc", {}).get("typ", "simple"))
+    if enc_typ == "graph":
+        return canonical_policy_name("dreamer_gnnenc")
+    if run_dir and "graph_encoder" in run_dir.name:
+        return canonical_policy_name("dreamer_gnnenc")
     return canonical_policy_name("dreamer_flat")
 
 
@@ -124,7 +129,12 @@ def _load_dreamer_config(logdir: Path):
     return elements.Config.load(str(path))
 
 
-def _make_obs_act_spaces(scenario_name: str, dreamer_config):
+def _use_graph_obs(logdir: Path, dreamer_config) -> bool:
+    enc_typ = str(getattr(getattr(dreamer_config.agent, "enc", {}), "typ", "simple"))
+    return enc_typ == "graph" or "graph_flat" in logdir.name or "graph_encoder" in logdir.name
+
+
+def _make_obs_act_spaces(scenario_name: str, dreamer_config, *, include_graph_obs: bool):
     import jax
     from dreamerv3.main import wrap_env
     from embodied.envs.from_gym import FromGym
@@ -136,7 +146,10 @@ def _make_obs_act_spaces(scenario_name: str, dreamer_config):
 
     with jax.transfer_guard("allow"):
         register_toy_consensus_envs()
-        gym_env = ToyConsensusGymEnv(scenario_name=scenario_name)
+        gym_env = ToyConsensusGymEnv(
+            scenario_name=scenario_name,
+            include_graph_obs=include_graph_obs,
+        )
 
     env = wrap_env(FromGym(gym_env), dreamer_config)
 
@@ -151,7 +164,8 @@ def _make_obs_act_spaces(scenario_name: str, dreamer_config):
 
 def _make_agent(logdir: Path, obs_space, act_space, dreamer_config):
     import elements
-    from dreamerv3.agent import Agent
+
+    from dgr.agents.graph_dreamerv3.agent import Agent
 
     agent_config = elements.Config(
         **dreamer_config.agent,
@@ -177,13 +191,16 @@ def _run_episode(agent, gym_env, episode_seed: int) -> dict[str, Any]:
     raw_obs = gym_env.reset()
 
     def _fmt(raw: dict, reward: float, is_first: bool, is_last: bool, is_terminal: bool) -> dict:
-        return {
-            "vector": raw["vector"][np.newaxis],
-            "reward": np.array([reward], dtype=np.float32),
-            "is_first": np.array([is_first]),
-            "is_last": np.array([is_last]),
-            "is_terminal": np.array([is_terminal]),
-        }
+        obs = {key: raw[key][np.newaxis] for key in raw if not str(key).startswith("log/")}
+        obs.update(
+            {
+                "reward": np.array([reward], dtype=np.float32),
+                "is_first": np.array([is_first]),
+                "is_last": np.array([is_last]),
+                "is_terminal": np.array([is_terminal]),
+            }
+        )
+        return obs
 
     carry = agent.init_policy(batch_size=1)
     carry, acts, _ = agent.policy(carry, _fmt(raw_obs, 0.0, True, False, False), mode="eval")
@@ -282,16 +299,24 @@ def main() -> None:
 
     scenario = args.scenario or _infer_scenario(logdir, dreamer_config)
     variant = _infer_size_label(dreamer_config)
-    agent_name = canonical_policy_name(_infer_agent_name(dreamer_config))
+    agent_name = canonical_policy_name(_infer_agent_name(dreamer_config, logdir))
     train_seed = int(getattr(dreamer_config, "seed", 0))
     eval_seed = args.seed
+    include_graph_obs = _use_graph_obs(logdir, dreamer_config)
 
-    obs_space, act_space = _make_obs_act_spaces(scenario, dreamer_config)
+    obs_space, act_space = _make_obs_act_spaces(
+        scenario,
+        dreamer_config,
+        include_graph_obs=include_graph_obs,
+    )
     agent = _make_agent(logdir, obs_space, act_space, dreamer_config)
 
     from dgr.envs.adapters.toy_graph_control_gym import ToyConsensusGymEnv
 
-    gym_env = ToyConsensusGymEnv(scenario_name=scenario)
+    gym_env = ToyConsensusGymEnv(
+        scenario_name=scenario,
+        include_graph_obs=include_graph_obs,
+    )
     rows = []
     for i in range(args.episodes):
         row = _run_episode(agent, gym_env, episode_seed=eval_seed + i)

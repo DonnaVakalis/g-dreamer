@@ -134,7 +134,7 @@ def _plot_panels(panels: list[dict], out_path: Path) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoint", type=Path, required=True)
-    parser.add_argument("--train-sizes", default="4,6")
+    parser.add_argument("--train-sizes", default="4,5,6")
     parser.add_argument("--eval-sizes", default="8,10")
     parser.add_argument("--horizon", type=int, default=50)
     parser.add_argument("--alpha", type=float, default=0.2)

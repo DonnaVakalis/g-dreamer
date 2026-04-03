@@ -26,7 +26,16 @@ echo "JAX devices:"
 poetry run python -c "import jax; print(jax.devices())"
 
 echo "Starting smoke test..."
+echo "Running baseline toy Dreamer smoke..."
 poetry run python -m dgr.train \
+    agent=baseline \
+    env=toy_consensus_debug_dense \
+    steps=500 \
+    --seed 0
+
+echo "Running graph-encoder toy Dreamer smoke..."
+poetry run python -m dgr.train \
+    agent=graph_encoder \
     env=toy_consensus_debug_dense \
     steps=500 \
     --seed 0
