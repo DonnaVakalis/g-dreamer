@@ -4,17 +4,21 @@ import sys
 from pathlib import Path
 
 import jax.numpy as jnp
-import ninjax as nj
 import numpy as np
 import pytest
 
+nj = pytest.importorskip("ninjax")
 elements = pytest.importorskip("elements")
+pytest.importorskip("gym")
 
 upstream_root = Path(__file__).resolve().parents[1] / "third_party" / "dreamerv3"
+if not upstream_root.exists():
+    pytest.skip("Vendored DreamerV3 checkout is not available", allow_module_level=True)
+
 if str(upstream_root) not in sys.path:
     sys.path.insert(0, str(upstream_root))
 
-from dreamerv3 import rssm  # noqa: E402
+rssm = pytest.importorskip("dreamerv3.rssm")  # noqa: E402
 
 from dgr.agents.graph_dreamerv3.encoders.gnn import GraphEncoder  # noqa: E402
 from dgr.envs.adapters.toy_graph_control_gym import ToyConsensusGymEnv  # noqa: E402
