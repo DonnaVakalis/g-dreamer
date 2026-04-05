@@ -65,6 +65,23 @@ def _git_revision() -> str | None:
         return None
 
 
+def _checkpoint_metadata(logdir: Path) -> dict[str, str]:
+    ckpt_dir = logdir / "ckpt"
+    meta = {"dreamer_checkpoint_dir": str(ckpt_dir)}
+    latest = ckpt_dir / "latest"
+    if not latest.exists():
+        return meta
+    try:
+        ref = latest.read_text().strip()
+    except OSError:
+        return meta
+    if not ref:
+        return meta
+    meta["dreamer_checkpoint_ref"] = ref
+    meta["dreamer_checkpoint_path"] = str(ckpt_dir / ref)
+    return meta
+
+
 def _infer_scenario(run_dir: Path, cfg: dict[str, Any]) -> str:
     task = str(cfg.get("task", ""))
     logdir = str(cfg.get("logdir", ""))
@@ -255,12 +272,14 @@ def _log_to_wandb(
         pass
 
     git_rev = _git_revision()
+    checkpoint_meta = _checkpoint_metadata(logdir)
     wb_kwargs = wandb_init_kwargs(meta)
     wb_kwargs["config"] = {
         **wb_kwargs["config"],
         **stats,
         "train_seed": train_seed,
         "dreamer_logdir": str(logdir),
+        **checkpoint_meta,
         **({"git_revision": git_rev} if git_rev else {}),
     }
 
