@@ -225,6 +225,7 @@ def _run_episode(agent, gym_env, episode_seed: int) -> dict[str, Any]:
     total_reward = 0.0
     steps = 0
     last_reward = 0.0
+    history: list[dict[str, Any]] = []
 
     while True:
         action = np.array(acts["action"][0])
@@ -232,6 +233,14 @@ def _run_episode(agent, gym_env, episode_seed: int) -> dict[str, Any]:
         steps += 1
         total_reward += reward
         last_reward = reward
+        history.append(
+            {
+                "t": steps,
+                "reward": float(reward),
+                "mse": float(-reward),
+                "done": bool(done),
+            }
+        )
         is_terminal = bool(info.get("is_terminal", done))
         carry, acts, _ = agent.policy(
             carry, _fmt(raw_obs, float(reward), False, done, is_terminal), mode="eval"
@@ -239,7 +248,12 @@ def _run_episode(agent, gym_env, episode_seed: int) -> dict[str, Any]:
         if done:
             break
 
-    return {"total_reward": total_reward, "end_mse": float(-last_reward), "steps": steps}
+    return {
+        "total_reward": total_reward,
+        "end_mse": float(-last_reward),
+        "steps": steps,
+        "history": history,
+    }
 
 
 def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -251,6 +265,29 @@ def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "total_reward_std": float(np.std([r["total_reward"] for r in rows])),
         "steps_mean": float(np.mean([r["steps"] for r in rows])),
     }
+
+
+def _within_episode_profile(rows: list[dict[str, Any]]) -> list[dict[str, float | int]]:
+    max_steps = max((len(row.get("history", [])) for row in rows), default=0)
+    profile: list[dict[str, float | int]] = []
+    for idx in range(max_steps):
+        mses = [row["history"][idx]["mse"] for row in rows if idx < len(row.get("history", []))]
+        rewards = [
+            row["history"][idx]["reward"] for row in rows if idx < len(row.get("history", []))
+        ]
+        if not mses:
+            continue
+        profile.append(
+            {
+                "t": idx + 1,
+                "mse_mean": float(np.mean(mses)),
+                "mse_std": float(np.std(mses)),
+                "reward_mean": float(np.mean(rewards)),
+                "reward_std": float(np.std(rewards)),
+                "count": len(mses),
+            }
+        )
+    return profile
 
 
 def _log_to_wandb(
@@ -273,6 +310,7 @@ def _log_to_wandb(
 
     git_rev = _git_revision()
     checkpoint_meta = _checkpoint_metadata(logdir)
+    within_episode = _within_episode_profile(rows)
     wb_kwargs = wandb_init_kwargs(meta)
     wb_kwargs["config"] = {
         **wb_kwargs["config"],
@@ -284,15 +322,56 @@ def _log_to_wandb(
     }
 
     with wandb.init(**wb_kwargs) as run:  # type: ignore[attr-defined]
+        run.define_metric("episode/index")
+        run.define_metric("episode/*", step_metric="episode/index")
+        run.define_metric("within_episode/t")
+        run.define_metric("within_episode/*", step_metric="within_episode/t")
+        wandb_table = getattr(wandb, "Table")
+
         for i, row in enumerate(rows):
             run.log(
                 {
+                    "episode/index": i,
                     "episode/total_reward": row["total_reward"],
                     "episode/end_mse": row["end_mse"],
                     "episode/steps": row["steps"],
-                },
-                step=i,
+                }
             )
+
+        raw_step_rows = []
+        for i, row in enumerate(rows):
+            for step_row in row.get("history", []):
+                raw_step_rows.append(
+                    [
+                        i,
+                        int(step_row["t"]),
+                        float(step_row["mse"]),
+                        float(step_row["reward"]),
+                        bool(step_row["done"]),
+                    ]
+                )
+        if raw_step_rows:
+            run.log(
+                {
+                    "within_episode/raw_table": wandb_table(
+                        columns=["episode", "t", "mse", "reward", "done"],
+                        data=raw_step_rows,
+                    )
+                }
+            )
+
+        for row in within_episode:
+            run.log(
+                {
+                    "within_episode/t": int(row["t"]),
+                    "within_episode/mse_mean": row["mse_mean"],
+                    "within_episode/mse_std": row["mse_std"],
+                    "within_episode/reward_mean": row["reward_mean"],
+                    "within_episode/reward_std": row["reward_std"],
+                    "within_episode/count": row["count"],
+                }
+            )
+
         run.log(
             {
                 "aggregate/end_mse_mean": agg["end_mse_mean"],
@@ -339,6 +418,7 @@ def main() -> None:
     rows = []
     for i in range(args.episodes):
         row = _run_episode(agent, gym_env, episode_seed=eval_seed + i)
+        row["episode"] = i
         rows.append(row)
         print(f"ep {i:3d}: end_mse={row['end_mse']:.4f}  total_reward={row['total_reward']:.3f}")
     gym_env.close()
