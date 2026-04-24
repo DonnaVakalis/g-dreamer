@@ -1,3 +1,12 @@
+"""Quick sanity-check script: runs a single 10-step consensus episode with three hand-coded
+controllers (zero, random, proportional) and prints per-step reward and MSE-to-goal.
+
+Useful for verifying that the environment and graph contract are working correctly before
+running larger experiments. No files are written — output is stdout only.
+
+    python scripts/debug_toy_consensus_episode.py
+"""
+
 from __future__ import annotations
 
 import jax

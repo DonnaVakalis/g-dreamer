@@ -7,6 +7,8 @@ experiments/**
 !experiments/sweeps/
 !experiments/sweeps/.gitkeep
 !experiments/toy_debug/
+# world model datasets and run artifacts (large files, generated locally or on cluster)
+# experiments/world_model/ is covered by experiments/** above
 wandb/
 CLAUDE.md
 

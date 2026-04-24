@@ -1,4 +1,18 @@
-"""Evaluate the minimal graph world model and save a train-vs-unseen generalization figure."""
+"""Evaluate a trained world model checkpoint and measure generalization across graph sizes.
+
+Loads a checkpoint produced by train_minimal_graph_world_model.py, runs the model on
+held-out transitions for each graph size, and reports per-size MSE. Produces a
+train-vs-unseen generalization figure showing in-distribution vs OOD performance.
+
+Canonical eval sizes:
+    In-distribution: --eval-sizes 4,5,6   (same sizes seen during training)
+    OOD:             --eval-sizes 3,8,10,12,16  (never seen during training)
+
+    python scripts/eval_minimal_graph_world_model.py \\
+        --checkpoint experiments/world_model/graph_rssm/graph_rssm_world_model.pkl \\
+        --dataset experiments/world_model/consensus_transitions_large.npz \\
+        --eval-sizes 4,5,6,8,10,12,16
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,50 @@
-"""Collect random consensus-environment transitions across graph sizes for world-model training."""
+"""Collect random consensus-environment transitions across graph sizes for world-model training.
+
+WHAT "SIZE" MEANS
+-----------------
+Each "size" is the number of real nodes (n_real) in a ring-topology consensus graph.
+A size-4 graph has 4 nodes connected in a directed ring; size-5 has 5 nodes; etc.
+These are genuinely different topologies — the generalization experiment trains on small
+rings and tests whether the world model transfers to larger rings it has never seen.
+
+All transitions are padded to n_max = max(sizes) nodes so they can be stored in a single
+array and batched with static shapes (required by JAX/JIT).
+
+RECOMMENDED COLLECTION COMMAND (large dataset for all experiments)
+-------------------------------------------------------------------
+    poetry run python scripts/collect_consensus_world_model_data.py \\
+        --sizes 3,4,5,6,8,10,12,16 \\
+        --episodes-per-size 2000 \\
+        --horizon 50 \\
+        --seed 0 \\
+        --out experiments/world_model/consensus_transitions_large.npz
+
+Dataset contents:
+
+    Size  | Episodes | Steps/ep | Transitions
+    ------|----------|----------|------------
+    3     | 2000     | 50       | 100 000    (below training range — extrapolation check)
+    4     | 2000     | 50       | 100 000    \\
+    5     | 2000     | 50       | 100 000     > training sizes
+    6     | 2000     | 50       | 100 000    /
+    8     | 2000     | 50       | 100 000    \\
+    10    | 2000     | 50       | 100 000     \\
+    12    | 2000     | 50       | 100 000      > OOD eval sizes (never used in training)
+    16    | 2000     | 50       | 100 000     /
+    ------|----------|----------|------------
+    TOTAL | 16 000   |          | 800 000
+
+TRAIN / OOD SPLIT (used at training time, not collection time)
+--------------------------------------------------------------
+The dataset stores n_real per transition, so splits are applied in the training script
+via --train-sizes. The canonical splits are:
+
+    Train:       --train-sizes 4,5,6
+    In-dist eval: n_real in {4, 5, 6}
+    OOD eval:     n_real in {3, 8, 10, 12, 16}  (never seen during training)
+
+These splits are non-overlapping by design.
+"""
 
 from __future__ import annotations
 
