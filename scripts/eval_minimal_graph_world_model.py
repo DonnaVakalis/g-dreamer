@@ -8,6 +8,7 @@ Produces:
   - A trajectory figure (ground truth vs predicted node states per size)
   - A per-size MSE table printed to stdout
   - A JSON metrics file alongside the figure
+  - A JSON figure-data file with raw arrays for figure reproduction/restyling
 
 Canonical eval sizes:
     In-distribution: --train-sizes 4,5,6   (same sizes seen during training)
@@ -89,6 +90,7 @@ def _rollout_episode(
     state, obs = reset(reset_key, cfg)
 
     gt_x, pred_x = [], []
+    gt_goal, pred_goal = [], []
     for _ in range(horizon):
         key, action_key, step_key = jax.random.split(key, 3)
         action = action_scale * jax.random.uniform(
@@ -107,17 +109,27 @@ def _rollout_episode(
         next_state, next_obs, _, done = step(step_key, cfg, state, action)
         gt_x.append(np.asarray(next_obs.nodes[:size, 0], dtype=np.float32))
         pred_x.append(np.asarray(pred_next[:size, 0], dtype=np.float32))
+        gt_goal.append(np.asarray(next_obs.nodes[:size, 1], dtype=np.float32))
+        pred_goal.append(np.asarray(pred_next[:size, 1], dtype=np.float32))
         state, obs = next_state, next_obs
         if bool(done):
             break
 
     gt_x_np = np.stack(gt_x, axis=0)
     pred_x_np = np.stack(pred_x, axis=0)
+    gt_goal_np = np.stack(gt_goal, axis=0)
+    pred_goal_np = np.stack(pred_goal, axis=0)
+    x_mse = float(np.mean((gt_x_np - pred_x_np) ** 2))
+    goal_mse = float(np.mean((gt_goal_np - pred_goal_np) ** 2))
     return {
         "size": size,
         "gt_x": gt_x_np,
         "pred_x": pred_x_np,
-        "mse": float(np.mean((gt_x_np - pred_x_np) ** 2)),
+        "gt_goal": gt_goal_np,
+        "pred_goal": pred_goal_np,
+        "x_mse": x_mse,
+        "goal_mse": goal_mse,
+        "mse": x_mse,
     }
 
 
@@ -158,7 +170,10 @@ def _plot_panels(panels: list[dict], out_path: Path, model_name: str) -> None:
                 label="predicted" if node_idx == 0 else None,
             )
         group_label = "train" if panel["group"] == "train" else "OOD"
-        ax.set_title(f"{group_label}  n={panel['size']}  MSE={panel['mse']:.4f}")
+        ax.set_title(
+            f"{group_label}  n={panel['size']}  "
+            f"x={panel['x_mse']:.4f}  goal={panel['goal_mse']:.4f}"
+        )
         ax.set_xlabel("Timestep")
         ax.set_ylabel("Node state x")
         ax.grid(alpha=0.2)
@@ -178,12 +193,15 @@ def _plot_panels(panels: list[dict], out_path: Path, model_name: str) -> None:
 
 def _print_table(train_sizes: list[int], eval_sizes: list[int], metrics: dict) -> None:
     train_label = "{" + ",".join(str(s) for s in train_sizes) + "}"
-    print(f"\n{'size':>6}  {'group':>10}  {'x_mse':>10}")
-    print("-" * 32)
+    print(f"\n{'size':>6}  {'group':>10}  {'x_mse':>10}  {'goal_mse':>10}")
+    print("-" * 44)
     for row in metrics["train"]:
-        print(f"{row['size']:>6}  {'in-dist':>10}  {row['x_mse']:>10.6f}")
+        print(
+            f"{row['size']:>6}  {'in-dist':>10}  "
+            f"{row['x_mse']:>10.6f}  {row['goal_mse']:>10.6f}"
+        )
     for row in metrics["unseen"]:
-        print(f"{row['size']:>6}  {'OOD':>10}  {row['x_mse']:>10.6f}")
+        print(f"{row['size']:>6}  {'OOD':>10}  " f"{row['x_mse']:>10.6f}  {row['goal_mse']:>10.6f}")
     print(f"\n  Trained on n ∈ {train_label}")
 
 
@@ -250,7 +268,8 @@ def main() -> int:
     metrics: dict[str, list[dict]] = {"train": [], "unseen": []}
 
     for offset, size in enumerate(all_sizes):
-        episode_mses = []
+        episode_x_mses: list[float] = []
+        episode_goal_mses: list[float] = []
         first_result = None
         for ep in range(args.episodes):
             result = _rollout_episode(
@@ -265,20 +284,30 @@ def main() -> int:
                 noise_std=args.noise_std,
                 action_scale=args.action_scale,
             )
-            episode_mses.append(result["mse"])
+            episode_x_mses.append(result["x_mse"])
+            episode_goal_mses.append(result["goal_mse"])
             if first_result is None:
                 first_result = result
 
         assert first_result is not None
-        mean_mse = float(np.mean(episode_mses))
-        first_result["mse"] = mean_mse
+        mean_x_mse = float(np.mean(episode_x_mses))
+        mean_goal_mse = float(np.mean(episode_goal_mses))
+        first_result["x_mse"] = mean_x_mse
+        first_result["goal_mse"] = mean_goal_mse
+        first_result["mse"] = mean_x_mse
         group = "train" if size in train_set else "unseen"
         first_result["group"] = group
         panels.append(first_result)
-        metrics[group].append({"size": size, "x_mse": mean_mse})
+        metrics[group].append({"size": size, "x_mse": mean_x_mse, "goal_mse": mean_goal_mse})
 
         if run is not None:
-            run.log({f"mse/n{size}": mean_mse, f"mse_group/{group}_n{size}": mean_mse})
+            run.log(
+                {
+                    f"x_mse/n{size}": mean_x_mse,
+                    f"goal_mse/n{size}": mean_goal_mse,
+                    f"mse_group/{group}_n{size}": mean_x_mse,
+                }
+            )
 
     _print_table(train_sizes, eval_sizes, metrics)
     _plot_panels(panels, out_path, model_name)
@@ -286,12 +315,29 @@ def main() -> int:
     metrics_path = out_path.with_suffix(".json")
     metrics_path.write_text(json.dumps(metrics, indent=2) + "\n")
 
+    figure_data_path = out_path.with_name(out_path.stem + "_figure_data.json")
+    figure_data = [
+        {
+            "size": p["size"],
+            "group": p["group"],
+            "x_mse": p["x_mse"],
+            "goal_mse": p["goal_mse"],
+            "gt_x": p["gt_x"].tolist(),
+            "pred_x": p["pred_x"].tolist(),
+            "gt_goal": p["gt_goal"].tolist(),
+            "pred_goal": p["pred_goal"].tolist(),
+        }
+        for p in panels
+    ]
+    figure_data_path.write_text(json.dumps(figure_data, indent=2) + "\n")
+
     if run is not None:
         run.log({"generalization_figure": wandb.Image(str(out_path))})  # type: ignore[attr-defined]
         run.finish()
 
-    print(f"\nSaved figure  → {out_path}")
-    print(f"Saved metrics → {metrics_path}")
+    print(f"\nSaved figure       → {out_path}")
+    print(f"Saved metrics      → {metrics_path}")
+    print(f"Saved figure data  → {figure_data_path}")
     return 0
 
 

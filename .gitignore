@@ -11,6 +11,7 @@ experiments/**
 # experiments/world_model/ is covered by experiments/** above
 wandb/
 CLAUDE.md
+docs/sprint_handoff.md
 
 # python
 __pycache__/
