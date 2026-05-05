@@ -3,7 +3,7 @@
 
 World models for physical systems whose dynamics are graph-structured, built on top of [DreamerV3](https://github.com/danijar/dreamerv3). The central question: when a system's physics involves local coupling between nodes (each node's state depends on its neighbors), does that structure need to live *inside* the world model's transition function — or is it enough to use graph encoders only at the observation boundary?
 
-> **Status: active development.** One-step prediction experiment complete. Online RL training not yet started.
+> **Status: active development.** One-step prediction generalization experiment complete. Online variants next.
 
 ---
 
@@ -13,15 +13,15 @@ Three world model variants were trained on a ring-topology consensus environment
 
 ![Size generalization](docs/assets/size_generalization.png)
 
-| Variant | Architecture | OOD x_mse (n=16) | OOD goal_mse (n=16) |
+| Variant | Architecture | OOD state MSE (n=16) | OOD goal MSE (n=16) |
 |---|---|---|---|
 | A: Flat MLP | no graph structure anywhere | 4.99 — collapses | 5.32 — collapses |
 | B: Node-indep. GNN | GNN encoder/decoder, per-node MLP dynamics (no cross-node coupling) | 0.061 — flat | 0.703 — broken everywhere |
 | C: Graph RSSM | GNN encoder + message-passing dynamics | 0.099 — flat | 0.128 — degrades gracefully |
 
-**Finding 1 — encoder graph structure gives size invariance on state prediction.** Both B and C stay flat OOD on x_mse while A collapses by 50×. A GNN encoder alone is sufficient for this.
+**Note 1 — encoder graph structure gives size invariance on state prediction.** Both B and C stay flat OOD on x_mse while A collapses by 50×. A GNN encoder alone is sufficient for this.
 
-**Finding 2 — cross-node coupling in dynamics matters beyond size generalization.** B's goal_mse is high at *every* size, including in-distribution. Per-node-independent dynamics cannot jointly model the physics and preserve static context features — the two objectives compete in the same latent without the distributed pathways that message passing provides. C's total in-distribution loss is 3× lower than B's.
+**Note 2 — cross-node coupling in dynamics matters beyond size generalization.** B's goal_mse is high at *every* size, including in-distribution. Per-node-independent dynamics cannot jointly model the physics and preserve static context features — the two objectives compete in the same latent without the distributed pathways that message passing provides. C's total in-distribution loss is 3× lower than B's.
 
 ---
 
