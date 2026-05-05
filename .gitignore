@@ -12,6 +12,7 @@ experiments/**
 wandb/
 CLAUDE.md
 docs/sprint_handoff.md
+docs/assets/
 
 # python
 __pycache__/
