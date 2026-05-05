@@ -46,9 +46,11 @@ def _make_config(model_name: str, node_dim: int, n_max: int, latent_dim: int, hi
 
         return FlatWMConfig(node_dim=node_dim, n_max=n_max, hidden_dim=hidden_dim)
     elif model_name == "graph_enc_dec":
-        from dgr.models.world_models.graph_enc_dec_wm import GraphEncDecWMConfig
+        from dgr.models.world_models.graph_enc_dec_wm import GraphNodeIndepWMConfig
 
-        return GraphEncDecWMConfig(node_dim=node_dim, latent_dim=latent_dim, hidden_dim=hidden_dim)
+        return GraphNodeIndepWMConfig(
+            node_dim=node_dim, latent_dim=latent_dim, hidden_dim=hidden_dim
+        )
     elif model_name == "graph_rssm":
         from dgr.models.world_models.graph_rssm_wm import GraphRSSMConfig
 

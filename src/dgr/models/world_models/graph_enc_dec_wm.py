@@ -10,10 +10,10 @@ from dgr.models.message_passing import masked_message_passing
 
 
 @dataclass(frozen=True)
-class GraphEncDecWMConfig:
+class GraphNodeIndepWMConfig:
     node_dim: int
-    latent_dim: int = 64
-    hidden_dim: int = 128
+    latent_dim: int = 32
+    hidden_dim: int = 64
 
 
 def _init_linear(key: jax.Array, in_dim: int, out_dim: int) -> dict[str, jnp.ndarray]:
@@ -53,19 +53,15 @@ def _mp(
 
 def init_params(
     key: jax.Array,
-    config: GraphEncDecWMConfig,
+    config: GraphNodeIndepWMConfig,
 ) -> dict[str, dict[str, jnp.ndarray]]:
-    k1, k2, k3, k4, k5, k6 = jax.random.split(key, 6)
+    k1, k2, k3, k4, k5 = jax.random.split(key, 5)
     return {
-        # encoder: node_dim -> hidden -> latent (per node), then masked mean pool
-        "enc_in": _init_linear(k1, config.node_dim, config.hidden_dim),
-        "enc_out": _init_linear(k2, config.hidden_dim, config.latent_dim),
-        # dynamics: (latent_dim + 1) -> hidden -> latent_dim  [+1 for scalar action mean]
-        "dyn_in": _init_linear(k3, config.latent_dim + 1, config.hidden_dim),
-        "dyn_out": _init_linear(k4, config.hidden_dim, config.latent_dim),
-        # decoder per node: (latent_dim + 1) -> hidden -> node_dim  [+1 for node position]
-        "dec_in": _init_linear(k5, config.latent_dim + 1, config.hidden_dim),
-        "dec_out": _init_linear(k6, config.hidden_dim, config.node_dim),
+        "encoder_in": _init_linear(k1, config.node_dim, config.hidden_dim),
+        "encoder_out": _init_linear(k2, config.hidden_dim, config.latent_dim),
+        "dynamics_in": _init_linear(k3, config.latent_dim + 1, config.hidden_dim),
+        "dynamics_out": _init_linear(k4, config.hidden_dim, config.latent_dim),
+        "decoder": _init_linear(k5, config.latent_dim, config.node_dim),
     }
 
 
@@ -80,33 +76,22 @@ def predict_next_nodes_single(
 ) -> jnp.ndarray:
     node_mask = node_mask.astype(jnp.bool_)
     edge_mask = edge_mask.astype(jnp.bool_)
-    n_max = nodes.shape[0]
 
-    # Encoder: per-node embed → message passing → latent per node
-    h = jax.nn.relu(_linear(params["enc_in"], _mask_nodes(nodes, node_mask)))
+    # Encoder: GNN with message passing
+    x = _mask_nodes(nodes, node_mask)
+    h = jax.nn.relu(_linear(params["encoder_in"], x))
     h = _mask_nodes(h, node_mask)
     h = jax.nn.relu(_mp(h, senders, receivers, node_mask, edge_mask))
-    h = _mask_nodes(jax.nn.relu(_linear(params["enc_out"], h)), node_mask)
+    h = _mask_nodes(jax.nn.relu(_linear(params["encoder_out"], h)), node_mask)
 
-    # Pool: masked mean over real nodes → global latent z
-    n_real = jnp.maximum(jnp.sum(node_mask.astype(jnp.float32)), 1.0)
-    z = jnp.sum(h, axis=0) / n_real  # (latent_dim,)
+    # Dynamics: per-node MLP, no cross-node message passing
+    action_features = actions[:, None].astype(jnp.float32)
+    dyn_in = jnp.concatenate([h, action_features], axis=-1)
+    dyn_h = _mask_nodes(jax.nn.relu(_linear(params["dynamics_in"], dyn_in)), node_mask)
+    dyn_h = _mask_nodes(jax.nn.relu(_linear(params["dynamics_out"], dyn_h)), node_mask)
 
-    # Action: masked mean of per-node scalar actions
-    action_mean = jnp.sum(actions.astype(jnp.float32) * node_mask.astype(jnp.float32)) / n_real
-
-    # Dynamics: MLP on global latent + scalar action
-    dyn_in = jnp.concatenate([z, action_mean[None]], axis=0)
-    z_next = jax.nn.relu(_linear(params["dyn_in"], dyn_in))
-    z_next = _linear(params["dyn_out"], z_next)  # (latent_dim,)
-
-    # Decoder: broadcast z_next to each node, concat with normalized node index
-    node_pos = jnp.arange(n_max, dtype=jnp.float32) / jnp.maximum(n_max - 1, 1)  # (n_max,)
-    z_broadcast = jnp.tile(z_next[None, :], (n_max, 1))  # (n_max, latent_dim)
-    dec_in = jnp.concatenate([z_broadcast, node_pos[:, None]], axis=-1)
-    pred = jax.nn.relu(_linear(params["dec_in"], dec_in))
-    pred = _linear(params["dec_out"], pred)
-
+    # Decoder: per-node linear
+    pred = _linear(params["decoder"], dyn_h)
     return _mask_nodes(pred, node_mask)
 
 
