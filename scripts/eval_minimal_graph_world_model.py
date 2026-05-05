@@ -196,12 +196,9 @@ def _print_table(train_sizes: list[int], eval_sizes: list[int], metrics: dict) -
     print(f"\n{'size':>6}  {'group':>10}  {'x_mse':>10}  {'goal_mse':>10}")
     print("-" * 44)
     for row in metrics["train"]:
-        print(
-            f"{row['size']:>6}  {'in-dist':>10}  "
-            f"{row['x_mse']:>10.6f}  {row['goal_mse']:>10.6f}"
-        )
+        print(f"{row['size']:>6}  {'in-dist':>10}  {row['x_mse']:>10.6f}  {row['goal_mse']:>10.6f}")
     for row in metrics["unseen"]:
-        print(f"{row['size']:>6}  {'OOD':>10}  " f"{row['x_mse']:>10.6f}  {row['goal_mse']:>10.6f}")
+        print(f"{row['size']:>6}  {'OOD':>10}  {row['x_mse']:>10.6f}  {row['goal_mse']:>10.6f}")
     print(f"\n  Trained on n ∈ {train_label}")
 
 
