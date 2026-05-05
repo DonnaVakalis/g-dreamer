@@ -67,13 +67,17 @@ def _env_to_upstream_configs(env: str) -> List[str]:
         # "atari_debug": ["atari", "debug"],
     }
     if env not in mapping:
-        raise ValueError(f"Unknown env={env!r}. Supported: {', '.join(sorted(mapping))}")
+        raise ValueError(
+            f"Unknown env={env!r}. \
+            Supported: {', '.join(sorted(mapping))}"
+        )
     return mapping[env]
 
 
-def _default_logdir(agent: str, env: str) -> Path:
+def _default_logdir(agent: str, env: str, seed: int | None = None) -> Path:
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return Path("experiments") / "runs" / f"{env}__{agent}__{stamp}"
+    suffix = f"__seed{seed}" if seed is not None else ""
+    return Path("experiments") / "runs" / f"{env}__{agent}__{stamp}{suffix}"
 
 
 def _run_upstream_dreamerv3(spec: RunSpec) -> int:
@@ -130,6 +134,12 @@ def _toy_env_to_task(env: str) -> str:
         "toy_consensus_debug_dense": f"gym_{env_id_for_scenario('debug_ring_dense')}",
         "toy_consensus_debug_sparse": f"gym_{env_id_for_scenario('debug_ring_sparse')}",
         "toy_consensus_train_dense": f"gym_{env_id_for_scenario('train_ring_dense')}",
+        "toy_consensus_train_sparse_hidden_smooth_aligned": (
+            f"gym_{env_id_for_scenario('train_ring_sparse_hidden_smooth_aligned')}"
+        ),
+        "toy_consensus_train_sparse_hidden_smooth_misaligned": (
+            f"gym_{env_id_for_scenario('train_ring_sparse_hidden_smooth_misaligned')}"
+        ),
         # keep old name temporarily for backward compatibility
         "toy_consensus_debug": f"gym_{env_id_for_scenario('train_ring_dense')}",
     }
@@ -163,16 +173,75 @@ def _run_upstream_toy_gym(spec: RunSpec) -> int:
 
     if "--logger.outputs" not in spec.extra_upstream_args:
         cmd += ["--logger.outputs", "jsonl", "wandb"]
+    if "--run.log_every" not in spec.extra_upstream_args:
+        cmd += ["--run.log_every", "1"]
 
     scenario = _toy_env_to_scenario(spec.env)
+    variant = configs[0]  # "debug" or "size1m"
     env = {
         **os.environ.copy(),
         "WANDB_PROJECT": "g-dreamer",
         "WANDB_RUN_GROUP": scenario,
         "WANDB_JOB_TYPE": "dreamer_train",
+        "DGR_WANDB_SCENARIO": scenario,
+        "DGR_WANDB_VARIANT": variant,
     }
 
     print("\n[dgr.train] Running upstream DreamerV3 baseline on toy Gym env")
+    print(f"[dgr.train] logdir: {spec.logdir}")
+    print(f"[dgr.train] cmd: {' '.join(cmd)}\n")
+
+    proc = subprocess.run(cmd, cwd=str(repo_root), env=env)
+    return proc.returncode
+
+
+def _run_graph_encoder_toy(spec: RunSpec, *, enc_type: str, agent_name: str) -> int:
+    """
+    Runs the encoder-swap Dreamer variant on the toy environment.
+
+    The important staging choice is that only the encoder changes here. We still
+    run Dreamer's standard RSSM and optimization loop so the experiment isolates
+    representation quality rather than bundling encoder and dynamics changes.
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    spec.logdir.mkdir(parents=True, exist_ok=True)
+    configs = ["debug"] if "debug" in spec.env else ["size1m"]
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "dgr.run_graph_dreamer_toy",
+        "--logdir",
+        str(spec.logdir),
+        "--configs",
+        *configs,
+        "--task",
+        _toy_env_to_task(spec.env),
+        "--run.steps",
+        str(spec.steps),
+        "--agent.enc.typ",
+        enc_type,
+        *spec.extra_upstream_args,
+    ]
+
+    if "--logger.outputs" not in spec.extra_upstream_args:
+        cmd += ["--logger.outputs", "jsonl", "wandb"]
+    if "--run.log_every" not in spec.extra_upstream_args:
+        cmd += ["--run.log_every", "1"]
+
+    scenario = _toy_env_to_scenario(spec.env)
+    variant = configs[0]
+    env = {
+        **os.environ.copy(),
+        "WANDB_PROJECT": "g-dreamer",
+        "WANDB_RUN_GROUP": scenario,
+        "WANDB_JOB_TYPE": "dreamer_train",
+        "DGR_WANDB_SCENARIO": scenario,
+        "DGR_WANDB_VARIANT": variant,
+        "DGR_WANDB_AGENT": agent_name,
+    }
+
+    print("\n[dgr.train] Running encoder-swap Dreamer on toy Gym env")
     print(f"[dgr.train] logdir: {spec.logdir}")
     print(f"[dgr.train] cmd: {' '.join(cmd)}\n")
 
@@ -189,7 +258,8 @@ def main(argv: List[str] | None = None) -> int:
     agent = kv.get("agent", "baseline")
     env = kv.get("env", "crafter_debug")
     steps = int(kv.get("steps", "2000"))
-    logdir = Path(kv["logdir"]) if "logdir" in kv else _default_logdir(agent, env)
+    seed = int(rest[rest.index("--seed") + 1]) if "--seed" in rest else None
+    logdir = Path(kv["logdir"]) if "logdir" in kv else _default_logdir(agent, env, seed)
 
     spec = RunSpec(
         agent=agent,
@@ -207,7 +277,17 @@ def main(argv: List[str] | None = None) -> int:
             pass
         return _run_upstream_dreamerv3(spec)
 
-    raise ValueError(f"Unknown agent={spec.agent!r}. Supported: baseline (for now).")
+    if spec.agent == "graph_flat":
+        _toy_env_to_task(spec.env)
+        return _run_graph_encoder_toy(spec, enc_type="simple", agent_name="dreamer_flat")
+
+    if spec.agent == "graph_encoder":
+        _toy_env_to_task(spec.env)
+        return _run_graph_encoder_toy(spec, enc_type="graph", agent_name="dreamer_gnnenc")
+
+    raise ValueError(
+        f"Unknown agent={spec.agent!r}. Supported: baseline, graph_flat, graph_encoder."
+    )
 
 
 if __name__ == "__main__":

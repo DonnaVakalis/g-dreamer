@@ -69,6 +69,43 @@ def _leaders_spaced_on_parity(
     return mask
 
 
+def make_consensus_config(
+    n_real: int,
+    *,
+    n_max: int | None = None,
+    horizon: int = 50,
+    alpha: float = 0.2,
+    beta: float = 0.5,
+    noise_std: float = 0.01,
+) -> ToyGraphControlConfig:
+    """
+    Build a simple dense-actuation, full-goal-visibility consensus config for arbitrary graph sizes.
+
+    This is the minimal setting used by the graph world model sprint so we can train on
+    multiple graph sizes without minting a separate named scenario for each one.
+    """
+    if n_real <= 0:
+        raise ValueError(f"n_real must be positive, got {n_real}")
+    n_max = n_real if n_max is None else n_max
+    if n_max < n_real:
+        raise ValueError(f"n_max must be >= n_real, got n_max={n_max}, n_real={n_real}")
+
+    spec = GraphSpec(n_max=n_max, e_max=2 * n_max, f_n=2, f_e=0, f_g=0)
+    return ToyGraphControlConfig(
+        spec=spec,
+        n_real=n_real,
+        dynamics=DynamicsConfig(
+            mode="consensus",
+            horizon=horizon,
+            alpha=alpha,
+            beta=beta,
+            noise_std=noise_std,
+        ),
+        actuator_mask=_dense_actuation(spec, n_real),
+        goal_obs_mask=_all_goals_visible(spec, n_real),
+    )
+
+
 def get_scenario(name: str) -> ToyGraphControlConfig:
     spec = GraphSpec(n_max=8, e_max=16, f_n=2, f_e=0, f_g=0)
 
@@ -238,6 +275,84 @@ def get_scenario(name: str) -> ToyGraphControlConfig:
             actuator_mask=_sparse_actuation_even(spec, n_real),
             goal_obs_mask=_leaders_spaced_on_parity(spec, n_real, leaders=3, parity=1),
             goal=GoalConfig(mode="clamped_smooth", smooth_steps=8, residual_std=0.1),
+        )
+
+    if name == "eval_ring_sparse_aligned":
+        n_real = 8
+        return ToyGraphControlConfig(
+            spec=spec,
+            n_real=n_real,
+            dynamics=DynamicsConfig(
+                mode="consensus", horizon=50, alpha=0.2, beta=0.5, noise_std=0.01
+            ),
+            actuator_mask=_sparse_actuation_even(spec, n_real),
+            goal_obs_mask=_leaders_spaced_on_parity(spec, n_real, leaders=3, parity=0),
+            goal=GoalConfig(mode="clamped_smooth", smooth_steps=8, residual_std=0.1),
+        )
+
+    if name == "eval_ring_sparse_aligned_ood":
+        n_real = 10
+        ood_spec = GraphSpec(n_max=10, e_max=20, f_n=2, f_e=0, f_g=0)
+        return ToyGraphControlConfig(
+            spec=ood_spec,
+            n_real=n_real,
+            dynamics=DynamicsConfig(
+                mode="consensus", horizon=50, alpha=0.2, beta=0.5, noise_std=0.01
+            ),
+            actuator_mask=_sparse_actuation_even(ood_spec, n_real),
+            goal_obs_mask=_leaders_spaced_on_parity(ood_spec, n_real, leaders=3, parity=0),
+            goal=GoalConfig(mode="clamped_smooth", smooth_steps=8, residual_std=0.1),
+        )
+
+    if name == "eval_ring_sparse_misaligned":
+        n_real = 8
+        return ToyGraphControlConfig(
+            spec=spec,
+            n_real=n_real,
+            dynamics=DynamicsConfig(
+                mode="consensus", horizon=50, alpha=0.2, beta=0.5, noise_std=0.01
+            ),
+            actuator_mask=_sparse_actuation_even(spec, n_real),
+            goal_obs_mask=_leaders_spaced_on_parity(spec, n_real, leaders=3, parity=1),
+            goal=GoalConfig(mode="clamped_smooth", smooth_steps=8, residual_std=0.1),
+        )
+
+    if name == "eval_ring_sparse_misaligned_ood":
+        n_real = 10
+        ood_spec = GraphSpec(n_max=10, e_max=20, f_n=2, f_e=0, f_g=0)
+        return ToyGraphControlConfig(
+            spec=ood_spec,
+            n_real=n_real,
+            dynamics=DynamicsConfig(
+                mode="consensus", horizon=50, alpha=0.2, beta=0.5, noise_std=0.01
+            ),
+            actuator_mask=_sparse_actuation_even(ood_spec, n_real),
+            goal_obs_mask=_leaders_spaced_on_parity(ood_spec, n_real, leaders=3, parity=1),
+            goal=GoalConfig(mode="clamped_smooth", smooth_steps=8, residual_std=0.1),
+        )
+
+    if name == "eval_ring_dense":
+        n_real = 5
+        return ToyGraphControlConfig(
+            spec=spec,
+            n_real=n_real,
+            dynamics=DynamicsConfig(
+                mode="consensus", horizon=50, alpha=0.2, beta=0.5, noise_std=0.01
+            ),
+            actuator_mask=_dense_actuation(spec, n_real),
+            goal_obs_mask=_all_goals_visible(spec, n_real),
+        )
+
+    if name == "eval_ring_dense_ood":
+        n_real = 7
+        return ToyGraphControlConfig(
+            spec=spec,
+            n_real=n_real,
+            dynamics=DynamicsConfig(
+                mode="consensus", horizon=50, alpha=0.2, beta=0.5, noise_std=0.01
+            ),
+            actuator_mask=_dense_actuation(spec, n_real),
+            goal_obs_mask=_all_goals_visible(spec, n_real),
         )
 
     raise ValueError(f"Unknown scenario: {name}")
