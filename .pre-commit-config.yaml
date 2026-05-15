@@ -11,7 +11,9 @@ repos:
     rev: v4.6.0
     hooks:
       - id: end-of-file-fixer
+        exclude: ^\.codex(/|$)
       - id: trailing-whitespace
+        exclude: ^\.codex(/|$)
       - id: check-yaml
 
   - repo: https://github.com/astral-sh/ruff-pre-commit

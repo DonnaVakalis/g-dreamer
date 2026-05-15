@@ -8,7 +8,14 @@ experiments/**
 !experiments/sweeps/.gitkeep
 !experiments/toy_debug/
 wandb/
+.codex/
+
 CLAUDE.md
+docs/sprint_handoff.md
+
+# Local-only under docs/assets; whitelist figure(s) the README renders on GitHub
+docs/assets/*
+!docs/assets/size_generalization_redesign.png
 
 # python
 __pycache__/
