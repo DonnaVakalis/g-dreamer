@@ -1,3 +1,13 @@
+"""Post-hoc upload of a completed DreamerV3 training run to Weights & Biases.
+
+Use this when a run finished on the cluster without --wandb enabled, or when W&B logging
+was interrupted. Reads the run's logdir (scores.jsonl + config YAML), reconstructs
+ExperimentMetadata from the directory name, and replays metrics step-by-step into a new
+W&B run.
+
+    python scripts/upload_dreamer_run_to_wandb.py experiments/runs/<run_dir>/
+"""
+
 from __future__ import annotations
 
 import argparse

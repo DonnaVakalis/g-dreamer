@@ -11,7 +11,7 @@ World models for physical systems whose dynamics are graph-structured, built on 
 
 Three world model variants were trained on a ring-topology consensus environment (n ∈ {4, 5, 6} nodes) and evaluated on unseen graph sizes (n ∈ {3, 8, 10, 12, 16}).
 
-![Size generalization](docs/assets/size_generalization.png)
+![Size generalization](docs/assets/size_generalization_redesign.png)
 
 | Variant | Architecture | OOD state MSE (n=16) | OOD goal MSE (n=16) |
 |---|---|---|---|
@@ -86,7 +86,8 @@ poetry run python scripts/eval_minimal_graph_world_model.py \
 
 Regenerate the figure:
 ```bash
-poetry run python scripts/plot_size_generalization_redesign.py --output docs/assets/size_generalization.png
+poetry run python scripts/plot_size_generalization_redesign.py \
+  --output docs/assets/size_generalization_redesign.png
 ```
 
 Run tests:
@@ -115,12 +116,13 @@ scripts/
 ├── collect_consensus_world_model_data.py
 ├── train_minimal_graph_world_model.py
 ├── eval_minimal_graph_world_model.py
-└── plot_size_generalization.py
+├── plot_size_generalization.py
+└── plot_size_generalization_redesign.py
 
 docs/
 ├── graph_obs_contract.md                          # Padded/masked graph observation spec
 ├── sprint_handoff.md                              # Implementation decisions and status
-└── assets/size_generalization.png                 # Key result figure
+└── assets/size_generalization_redesign.png       # Key result figure (tracked)
 ```
 
 See [docs/graph_obs_contract.md](docs/graph_obs_contract.md) for the graph data contract.

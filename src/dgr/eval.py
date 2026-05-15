@@ -65,6 +65,23 @@ def _git_revision() -> str | None:
         return None
 
 
+def _checkpoint_metadata(logdir: Path) -> dict[str, str]:
+    ckpt_dir = logdir / "ckpt"
+    meta = {"dreamer_checkpoint_dir": str(ckpt_dir)}
+    latest = ckpt_dir / "latest"
+    if not latest.exists():
+        return meta
+    try:
+        ref = latest.read_text().strip()
+    except OSError:
+        return meta
+    if not ref:
+        return meta
+    meta["dreamer_checkpoint_ref"] = ref
+    meta["dreamer_checkpoint_path"] = str(ckpt_dir / ref)
+    return meta
+
+
 def _infer_scenario(run_dir: Path, cfg: dict[str, Any]) -> str:
     task = str(cfg.get("task", ""))
     logdir = str(cfg.get("logdir", ""))
@@ -100,9 +117,14 @@ def _infer_size_label(cfg: dict[str, Any]) -> str:
     return _SIZE_SIGNATURES.get((deter, depth, units), "custom")
 
 
-def _infer_agent_name(cfg: dict[str, Any]) -> str:
+def _infer_agent_name(cfg: dict[str, Any], run_dir: Path | None = None) -> str:
     if bool(cfg.get("random_agent", False)):
         return "random"
+    enc_typ = str(cfg.get("agent", {}).get("enc", {}).get("typ", "simple"))
+    if enc_typ == "graph":
+        return canonical_policy_name("dreamer_gnnenc")
+    if run_dir and "graph_encoder" in run_dir.name:
+        return canonical_policy_name("dreamer_gnnenc")
     return canonical_policy_name("dreamer_flat")
 
 
@@ -124,7 +146,12 @@ def _load_dreamer_config(logdir: Path):
     return elements.Config.load(str(path))
 
 
-def _make_obs_act_spaces(scenario_name: str, dreamer_config):
+def _use_graph_obs(logdir: Path, dreamer_config) -> bool:
+    enc_typ = str(getattr(getattr(dreamer_config.agent, "enc", {}), "typ", "simple"))
+    return enc_typ == "graph" or "graph_flat" in logdir.name or "graph_encoder" in logdir.name
+
+
+def _make_obs_act_spaces(scenario_name: str, dreamer_config, *, include_graph_obs: bool):
     import jax
     from dreamerv3.main import wrap_env
     from embodied.envs.from_gym import FromGym
@@ -136,7 +163,10 @@ def _make_obs_act_spaces(scenario_name: str, dreamer_config):
 
     with jax.transfer_guard("allow"):
         register_toy_consensus_envs()
-        gym_env = ToyConsensusGymEnv(scenario_name=scenario_name)
+        gym_env = ToyConsensusGymEnv(
+            scenario_name=scenario_name,
+            include_graph_obs=include_graph_obs,
+        )
 
     env = wrap_env(FromGym(gym_env), dreamer_config)
 
@@ -151,7 +181,8 @@ def _make_obs_act_spaces(scenario_name: str, dreamer_config):
 
 def _make_agent(logdir: Path, obs_space, act_space, dreamer_config):
     import elements
-    from dreamerv3.agent import Agent
+
+    from dgr.agents.graph_dreamerv3.agent import Agent
 
     agent_config = elements.Config(
         **dreamer_config.agent,
@@ -177,13 +208,16 @@ def _run_episode(agent, gym_env, episode_seed: int) -> dict[str, Any]:
     raw_obs = gym_env.reset()
 
     def _fmt(raw: dict, reward: float, is_first: bool, is_last: bool, is_terminal: bool) -> dict:
-        return {
-            "vector": raw["vector"][np.newaxis],
-            "reward": np.array([reward], dtype=np.float32),
-            "is_first": np.array([is_first]),
-            "is_last": np.array([is_last]),
-            "is_terminal": np.array([is_terminal]),
-        }
+        obs = {key: raw[key][np.newaxis] for key in raw if not str(key).startswith("log/")}
+        obs.update(
+            {
+                "reward": np.array([reward], dtype=np.float32),
+                "is_first": np.array([is_first]),
+                "is_last": np.array([is_last]),
+                "is_terminal": np.array([is_terminal]),
+            }
+        )
+        return obs
 
     carry = agent.init_policy(batch_size=1)
     carry, acts, _ = agent.policy(carry, _fmt(raw_obs, 0.0, True, False, False), mode="eval")
@@ -191,6 +225,7 @@ def _run_episode(agent, gym_env, episode_seed: int) -> dict[str, Any]:
     total_reward = 0.0
     steps = 0
     last_reward = 0.0
+    history: list[dict[str, Any]] = []
 
     while True:
         action = np.array(acts["action"][0])
@@ -198,6 +233,14 @@ def _run_episode(agent, gym_env, episode_seed: int) -> dict[str, Any]:
         steps += 1
         total_reward += reward
         last_reward = reward
+        history.append(
+            {
+                "t": steps,
+                "reward": float(reward),
+                "mse": float(-reward),
+                "done": bool(done),
+            }
+        )
         is_terminal = bool(info.get("is_terminal", done))
         carry, acts, _ = agent.policy(
             carry, _fmt(raw_obs, float(reward), False, done, is_terminal), mode="eval"
@@ -205,7 +248,12 @@ def _run_episode(agent, gym_env, episode_seed: int) -> dict[str, Any]:
         if done:
             break
 
-    return {"total_reward": total_reward, "end_mse": float(-last_reward), "steps": steps}
+    return {
+        "total_reward": total_reward,
+        "end_mse": float(-last_reward),
+        "steps": steps,
+        "history": history,
+    }
 
 
 def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -219,12 +267,36 @@ def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _within_episode_profile(rows: list[dict[str, Any]]) -> list[dict[str, float | int]]:
+    max_steps = max((len(row.get("history", [])) for row in rows), default=0)
+    profile: list[dict[str, float | int]] = []
+    for idx in range(max_steps):
+        mses = [row["history"][idx]["mse"] for row in rows if idx < len(row.get("history", []))]
+        rewards = [
+            row["history"][idx]["reward"] for row in rows if idx < len(row.get("history", []))
+        ]
+        if not mses:
+            continue
+        profile.append(
+            {
+                "t": idx + 1,
+                "mse_mean": float(np.mean(mses)),
+                "mse_std": float(np.std(mses)),
+                "reward_mean": float(np.mean(rewards)),
+                "reward_std": float(np.std(rewards)),
+                "count": len(mses),
+            }
+        )
+    return profile
+
+
 def _log_to_wandb(
     rows: list[dict[str, Any]],
     agg: dict[str, Any],
     meta: ExperimentMetadata,
     logdir: Path,
     episodes: int,
+    train_seed: int = 0,
 ) -> None:
     import wandb
 
@@ -237,24 +309,69 @@ def _log_to_wandb(
         pass
 
     git_rev = _git_revision()
+    checkpoint_meta = _checkpoint_metadata(logdir)
+    within_episode = _within_episode_profile(rows)
     wb_kwargs = wandb_init_kwargs(meta)
     wb_kwargs["config"] = {
         **wb_kwargs["config"],
         **stats,
+        "train_seed": train_seed,
         "dreamer_logdir": str(logdir),
+        **checkpoint_meta,
         **({"git_revision": git_rev} if git_rev else {}),
     }
 
     with wandb.init(**wb_kwargs) as run:  # type: ignore[attr-defined]
+        run.define_metric("episode/index")
+        run.define_metric("episode/*", step_metric="episode/index")
+        run.define_metric("within_episode/t")
+        run.define_metric("within_episode/*", step_metric="within_episode/t")
+        wandb_table = getattr(wandb, "Table")
+
         for i, row in enumerate(rows):
             run.log(
                 {
+                    "episode/index": i,
                     "episode/total_reward": row["total_reward"],
                     "episode/end_mse": row["end_mse"],
                     "episode/steps": row["steps"],
-                },
-                step=i,
+                }
             )
+
+        raw_step_rows = []
+        for i, row in enumerate(rows):
+            for step_row in row.get("history", []):
+                raw_step_rows.append(
+                    [
+                        i,
+                        int(step_row["t"]),
+                        float(step_row["mse"]),
+                        float(step_row["reward"]),
+                        bool(step_row["done"]),
+                    ]
+                )
+        if raw_step_rows:
+            run.log(
+                {
+                    "within_episode/raw_table": wandb_table(
+                        columns=["episode", "t", "mse", "reward", "done"],
+                        data=raw_step_rows,
+                    )
+                }
+            )
+
+        for row in within_episode:
+            run.log(
+                {
+                    "within_episode/t": int(row["t"]),
+                    "within_episode/mse_mean": row["mse_mean"],
+                    "within_episode/mse_std": row["mse_std"],
+                    "within_episode/reward_mean": row["reward_mean"],
+                    "within_episode/reward_std": row["reward_std"],
+                    "within_episode/count": row["count"],
+                }
+            )
+
         run.log(
             {
                 "aggregate/end_mse_mean": agg["end_mse_mean"],
@@ -280,18 +397,28 @@ def main() -> None:
 
     scenario = args.scenario or _infer_scenario(logdir, dreamer_config)
     variant = _infer_size_label(dreamer_config)
-    agent_name = canonical_policy_name(_infer_agent_name(dreamer_config))
-    seed = int(getattr(dreamer_config, "seed", args.seed))
+    agent_name = canonical_policy_name(_infer_agent_name(dreamer_config, logdir))
+    train_seed = int(getattr(dreamer_config, "seed", 0))
+    eval_seed = args.seed
+    include_graph_obs = _use_graph_obs(logdir, dreamer_config)
 
-    obs_space, act_space = _make_obs_act_spaces(scenario, dreamer_config)
+    obs_space, act_space = _make_obs_act_spaces(
+        scenario,
+        dreamer_config,
+        include_graph_obs=include_graph_obs,
+    )
     agent = _make_agent(logdir, obs_space, act_space, dreamer_config)
 
     from dgr.envs.adapters.toy_graph_control_gym import ToyConsensusGymEnv
 
-    gym_env = ToyConsensusGymEnv(scenario_name=scenario)
+    gym_env = ToyConsensusGymEnv(
+        scenario_name=scenario,
+        include_graph_obs=include_graph_obs,
+    )
     rows = []
     for i in range(args.episodes):
-        row = _run_episode(agent, gym_env, episode_seed=seed + i)
+        row = _run_episode(agent, gym_env, episode_seed=eval_seed + i)
+        row["episode"] = i
         rows.append(row)
         print(f"ep {i:3d}: end_mse={row['end_mse']:.4f}  total_reward={row['total_reward']:.3f}")
     gym_env.close()
@@ -304,11 +431,11 @@ def main() -> None:
             run_type="dreamer_eval",
             scenario=scenario,
             policy_or_agent=agent_name,
-            seed=seed,
+            seed=eval_seed,
             variant=variant,
             episodes=args.episodes,
         ).with_timestamp()
-        _log_to_wandb(rows, agg, meta, logdir, args.episodes)
+        _log_to_wandb(rows, agg, meta, logdir, args.episodes, train_seed=train_seed)
 
 
 if __name__ == "__main__":

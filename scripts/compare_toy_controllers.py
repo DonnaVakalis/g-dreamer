@@ -165,6 +165,29 @@ def aggregate_rollouts(rows):
     }
 
 
+def within_episode_profile(rows):
+    max_steps = max((len(row.get("history", [])) for row in rows), default=0)
+    profile = []
+    for idx in range(max_steps):
+        mses = [row["history"][idx]["mse"] for row in rows if idx < len(row.get("history", []))]
+        rewards = [
+            row["history"][idx]["reward"] for row in rows if idx < len(row.get("history", []))
+        ]
+        if not mses:
+            continue
+        profile.append(
+            {
+                "t": idx + 1,
+                "mse_mean": float(np.mean(mses)),
+                "mse_std": float(np.std(mses)),
+                "reward_mean": float(np.mean(rewards)),
+                "reward_std": float(np.std(rewards)),
+                "count": len(mses),
+            }
+        )
+    return profile
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("scenario", help="Scenario name from scenarios.get_scenario()")
@@ -271,6 +294,7 @@ def main():
     if args.wandb:
         for name, rows in results_by_controller.items():
             agg = summary_by_controller[name]
+            profile = within_episode_profile(rows)
             meta = ExperimentMetadata(
                 run_type="controller_eval",
                 scenario=scenario_name,
@@ -287,20 +311,62 @@ def main():
                 **({} if git_rev is None else {"git_revision": git_rev}),
             }
             with wandb.init(**wb_kwargs) as run:
+                run.define_metric("episode/index")
+                run.define_metric("episode/*", step_metric="episode/index")
+                run.define_metric("within_episode/t")
+                run.define_metric("within_episode/*", step_metric="within_episode/t")
+                wandb_table = getattr(wandb, "Table")
+
                 for row in rows:
                     ep = int(row["episode"])
                     c = compact_episode_row(row)
                     run.log(
                         {
+                            "episode/index": ep,
                             "episode/total_reward": c["total_reward"],
                             "episode/end_mse": c["end_mse"],
                             "episode/end_mse_ctrl": c["end_mse_ctrl"],
                             "episode/end_mse_unact": c["end_mse_unact"],
                             "episode/steps": c["steps"],
                             "episode/start_mse": c["start_mse"],
-                        },
-                        step=ep,
+                        }
                     )
+
+                raw_step_rows = []
+                for row in rows:
+                    ep = int(row["episode"])
+                    for step_row in row.get("history", []):
+                        raw_step_rows.append(
+                            [
+                                ep,
+                                int(step_row["t"]),
+                                float(step_row["mse"]),
+                                float(step_row["reward"]),
+                                bool(step_row["done"]),
+                            ]
+                        )
+                if raw_step_rows:
+                    run.log(
+                        {
+                            "within_episode/raw_table": wandb_table(
+                                columns=["episode", "t", "mse", "reward", "done"],
+                                data=raw_step_rows,
+                            )
+                        }
+                    )
+
+                for row in profile:
+                    run.log(
+                        {
+                            "within_episode/t": int(row["t"]),
+                            "within_episode/mse_mean": row["mse_mean"],
+                            "within_episode/mse_std": row["mse_std"],
+                            "within_episode/reward_mean": row["reward_mean"],
+                            "within_episode/reward_std": row["reward_std"],
+                            "within_episode/count": row["count"],
+                        }
+                    )
+
                 run.log(
                     {
                         "aggregate/end_mse_mean": agg["end_mse_mean"],
