@@ -181,6 +181,12 @@ def _plot(results: dict, sizes: list[int], train_sizes: set[int], out_path: Path
         ("goal_mean", "goal_std", "Goal  goal_mse"),
     ]
 
+    # Open-loop rollout error compounds over many orders of magnitude, so the y-axis
+    # is logarithmic. Non-finite / diverged values are clipped to a display ceiling
+    # so a blown-up model still reads as "pinned at the ceiling" rather than erasing
+    # the axis scale for every other curve.
+    floor, ceil = 1e-4, 1e4
+
     for col, size in enumerate(sizes):
         group = "in-dist" if size in train_sizes else "OOD"
         for row, (mean_key, std_key, ylabel) in enumerate(feature_rows):
@@ -193,21 +199,23 @@ def _plot(results: dict, sizes: list[int], train_sizes: set[int], out_path: Path
                 r = results[model][size]
                 T = len(r[mean_key])
                 t = np.arange(1, T + 1)
-                ax.plot(t, r[mean_key], color=COLORS[model], linewidth=2.0, label=LABELS[model])
-                ax.fill_between(
-                    t,
-                    r[mean_key] - r[std_key],
-                    r[mean_key] + r[std_key],
-                    color=COLORS[model],
-                    alpha=0.15,
-                )
+                mean = np.nan_to_num(r[mean_key], nan=ceil, posinf=ceil, neginf=ceil)
+                std = np.nan_to_num(r[std_key], nan=0.0, posinf=0.0, neginf=0.0)
+                mean = np.clip(mean, floor, ceil)
+                lo = np.clip(mean - std, floor, ceil)
+                hi = np.clip(mean + std, floor, ceil)
+                ax.plot(t, mean, color=COLORS[model], linewidth=2.0, label=LABELS[model])
+                ax.fill_between(t, lo, hi, color=COLORS[model], alpha=0.15)
 
+            ax.set_yscale("log")
+            ax.set_ylim(floor, ceil)
+            ax.axhline(ceil, color="#999999", linewidth=0.8, linestyle=":")
             ax.set_xlabel("Timestep", labelpad=3)
             if col == 0:
                 ax.set_ylabel(ylabel, labelpad=4)
             if row == 0:
                 ax.set_title(f"n={size}  ({group})", pad=6)
-            ax.grid(alpha=0.2)
+            ax.grid(alpha=0.2, which="both")
             ax.spines["top"].set_visible(False)
             ax.spines["right"].set_visible(False)
 
