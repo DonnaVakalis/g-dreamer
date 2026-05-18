@@ -84,11 +84,6 @@ poetry run python scripts/eval_minimal_graph_world_model.py \
   --train-sizes 4,5,6 --eval-sizes 3,8,10,12,16 --episodes 5
 ```
 
-Regenerate the figure:
-```bash
-poetry run python scripts/plot_size_generalization_redesign.py \
-  --output docs/assets/size_generalization_redesign.png
-```
 
 Run tests:
 ```bash
@@ -119,15 +114,7 @@ scripts/
 ├── plot_size_generalization.py
 └── plot_size_generalization_redesign.py
 
-docs/
-├── graph_obs_contract.md                          # Padded/masked graph observation spec
-├── sprint_handoff.md                              # Implementation decisions and status
-└── assets/size_generalization_redesign.png       # Key result figure (tracked)
 ```
-
-See [docs/graph_obs_contract.md](docs/graph_obs_contract.md) for the graph data contract.
-
----
 
 ## Dev
 
