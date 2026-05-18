@@ -51,6 +51,12 @@ LABELS = {
     "graph_rssm": "C: Graph RSSM",
 }
 
+# Open-loop rollout error is heavy-tailed: a few episodes diverge by ~30 orders of
+# magnitude. Each episode's per-step error is clipped to [_FLOOR, _CEIL] *before*
+# aggregation so the reported mean ± SD is finite and a diverged episode contributes
+# the ceiling rather than infinity. _DIVERGE_THRESHOLD defines a diverged episode.
+_FLOOR, _CEIL = 1e-4, 1e4
+
 
 def _load_model(checkpoint_path: Path):
     import importlib
@@ -125,7 +131,19 @@ def _rollout_episode(
 
 
 def _run_size(
-    mod, params, *, size, n_max, horizon, episodes, seed, alpha, beta, noise_std, action_scale
+    mod,
+    params,
+    *,
+    size,
+    n_max,
+    horizon,
+    episodes,
+    seed,
+    alpha,
+    beta,
+    noise_std,
+    action_scale,
+    diverge_threshold,
 ):
     all_x = []
     all_g = []
@@ -146,11 +164,23 @@ def _run_size(
         all_g.append(g_e)
     x_arr = np.stack(all_x)  # (episodes, T)
     g_arr = np.stack(all_g)
+
+    # An episode has diverged if its combined error ever exceeds the threshold or goes
+    # non-finite. Measured on raw values, before clipping.
+    combined = x_arr + g_arr
+    diverged = ~np.isfinite(combined) | (combined > diverge_threshold)
+    diverge_rate = float(diverged.any(axis=1).mean())
+
+    # Clip per-episode so the mean ± SD bands are finite (see _FLOOR/_CEIL note).
+    x_clip = np.clip(np.nan_to_num(x_arr, nan=_CEIL, posinf=_CEIL, neginf=_CEIL), _FLOOR, _CEIL)
+    g_clip = np.clip(np.nan_to_num(g_arr, nan=_CEIL, posinf=_CEIL, neginf=_CEIL), _FLOOR, _CEIL)
     return {
-        "x_mean": x_arr.mean(0),
-        "x_std": x_arr.std(0),
-        "goal_mean": g_arr.mean(0),
-        "goal_std": g_arr.std(0),
+        "x_mean": x_clip.mean(0),
+        "x_std": x_clip.std(0),
+        "goal_mean": g_clip.mean(0),
+        "goal_std": g_clip.std(0),
+        "diverge_rate": np.asarray(diverge_rate, dtype=np.float32),
+        "n_episodes": np.asarray(episodes, dtype=np.int32),
     }
 
 
@@ -231,10 +261,76 @@ def _plot(results: dict, sizes: list[int], train_sizes: set[int], out_path: Path
         bbox_to_anchor=(0.5, 0.97),
     )
     fig.suptitle(
-        "Open-loop rollout error over horizon  —  model feeds its own predictions back",
+        "Open-loop rollout error over horizon  —  mean ± 1 SD across episodes "
+        "(per-episode error clipped to the display range)",
         fontsize=10,
         y=0.995,
     )
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved figure → {out_path}")
+
+
+def _plot_divergence_rate(
+    results: dict,
+    sizes: list[int],
+    train_sizes: set[int],
+    threshold: float,
+    out_path: Path,
+) -> None:
+    os.environ.setdefault("MPLCONFIGDIR", str(out_path.parent / ".mplconfig"))
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.ticker import PercentFormatter
+
+    models = [m for m in _MODEL_NAMES if m in results]
+    fig, ax = plt.subplots(figsize=(1.7 * len(sizes) + 2.5, 4.2))
+
+    x = np.arange(len(sizes))
+    width = 0.8 / max(len(models), 1)
+    n_eps = next(
+        (int(results[m][s]["n_episodes"]) for m in models for s in sizes if s in results[m]),
+        0,
+    )
+
+    for col, size in enumerate(sizes):
+        if size not in train_sizes:
+            ax.axvspan(col - 0.5, col + 0.5, color="#fff8f0", zorder=0)
+
+    for i, model in enumerate(models):
+        rates = [
+            float(results[model][s]["diverge_rate"]) if s in results[model] else 0.0 for s in sizes
+        ]
+        offset = (i - (len(models) - 1) / 2) * width
+        bars = ax.bar(x + offset, rates, width, color=COLORS[model], label=LABELS[model], zorder=3)
+        for b, r in zip(bars, rates):
+            ax.text(
+                b.get_x() + b.get_width() / 2,
+                r + 0.02,
+                f"{r:.0%}",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+            )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"n={s}\n({'in-dist' if s in train_sizes else 'OOD'})" for s in sizes])
+    ax.set_ylabel("Episodes that diverged")
+    ax.set_ylim(0, 1.12)
+    ax.yaxis.set_major_formatter(PercentFormatter(xmax=1.0))
+    ax.set_title(
+        f"Open-loop divergence rate  —  {n_eps} episodes/size, "
+        f"diverged = combined MSE ever exceeds {threshold:g}",
+        fontsize=10,
+    )
+    ax.legend(frameon=False, fontsize=9, ncol=len(models))
+    ax.grid(axis="y", alpha=0.2, zorder=0)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -258,6 +354,12 @@ def main() -> int:
     parser.add_argument("--train-sizes", default="4,5,6", help="Training sizes (for panel labels).")
     parser.add_argument("--episodes", type=int, default=10)
     parser.add_argument("--horizon", type=int, default=50)
+    parser.add_argument(
+        "--diverge-threshold",
+        type=float,
+        default=10.0,
+        help="An episode counts as diverged once its combined (x+goal) MSE exceeds this.",
+    )
     parser.add_argument("--alpha", type=float, default=0.2)
     parser.add_argument("--beta", type=float, default=0.5)
     parser.add_argument("--noise-std", type=float, default=0.01)
@@ -297,9 +399,17 @@ def main() -> int:
                 beta=args.beta,
                 noise_std=args.noise_std,
                 action_scale=args.action_scale,
+                diverge_threshold=args.diverge_threshold,
             )
 
     _plot(results, sizes, train_sizes, args.out)
+    _plot_divergence_rate(
+        results,
+        sizes,
+        train_sizes,
+        args.diverge_threshold,
+        args.out.with_name("multistep_divergence_rate.png"),
+    )
 
     data_path = args.out.with_name(args.out.stem + "_data.json")
     serialisable = {
