@@ -11,6 +11,8 @@ import jax.numpy as jnp
 
 from dgr.interface.graph_spec import Graph, GraphSpec, validate_graph
 
+from .topologies import Topology, make_ring_topology
+
 
 @dataclass(frozen=True)
 class DynamicsConfig:
@@ -36,6 +38,7 @@ class ToyGraphControlConfig:
     actuator_mask: jnp.ndarray  # (N_max,) bool
     goal_obs_mask: jnp.ndarray  # (N_max,) bool  — which nodes' goal is vis  in observation
     goal: GoalConfig = field(default_factory=GoalConfig)
+    topology: Topology | None = None  # precomputed graph structure; None → ring (legacy)
 
 
 @dataclass(frozen=True)
@@ -47,28 +50,6 @@ class EnvState:
     receivers: jnp.ndarray  # (E_max,)
     edge_mask: jnp.ndarray  # (E_max,)
     node_mask: jnp.ndarray  # (N_max,)
-
-
-def make_ring_topology(
-    spec: GraphSpec, n_real: int
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    e_real = 2 * n_real
-    if e_real > spec.e_max:
-        raise ValueError(f"Need e_max >= 2*n_real, got e_max={spec.e_max}, n_real={n_real}")
-
-    i = jnp.arange(n_real, dtype=jnp.int32)
-    s1 = i
-    r1 = (i + 1) % n_real
-    s2 = i
-    r2 = (i - 1) % n_real
-
-    senders_real = jnp.concatenate([s1, s2], axis=0)
-    receivers_real = jnp.concatenate([r1, r2], axis=0)
-
-    senders = jnp.zeros((spec.e_max,), dtype=jnp.int32).at[:e_real].set(senders_real)
-    receivers = jnp.zeros((spec.e_max,), dtype=jnp.int32).at[:e_real].set(receivers_real)
-    edge_mask = jnp.arange(spec.e_max) < e_real
-    return senders, receivers, edge_mask
 
 
 # builds the per-node target values (goal)
@@ -183,7 +164,12 @@ def reset(key: jax.Array, cfg: ToyGraphControlConfig) -> tuple[EnvState, Graph]:
         )
 
     node_mask = jnp.arange(spec.n_max) < cfg.n_real
-    senders, receivers, edge_mask = make_ring_topology(spec, cfg.n_real)
+    if cfg.topology is None:
+        senders, receivers, edge_mask = make_ring_topology(spec, cfg.n_real)
+    else:
+        senders = cfg.topology.senders
+        receivers = cfg.topology.receivers
+        edge_mask = cfg.topology.edge_mask
 
     k1, k2 = jax.random.split(key, 2)
     x0 = jax.random.normal(k1, (spec.n_max,), dtype=jnp.float32)

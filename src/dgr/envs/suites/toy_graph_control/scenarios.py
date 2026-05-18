@@ -9,6 +9,7 @@ import jax.numpy as jnp
 from dgr.interface.graph_spec import GraphSpec
 
 from .core import DynamicsConfig, GoalConfig, ToyGraphControlConfig
+from .topologies import make_topology
 
 
 def _dense_actuation(spec: GraphSpec, n_real: int) -> jnp.ndarray:
@@ -77,12 +78,17 @@ def make_consensus_config(
     alpha: float = 0.2,
     beta: float = 0.5,
     noise_std: float = 0.01,
+    topology: str = "ring",
+    topology_seed: int = 0,
 ) -> ToyGraphControlConfig:
     """
     Build a simple dense-actuation, full-goal-visibility consensus config for arbitrary graph sizes.
 
     This is the minimal setting used by the graph world model sprint so we can train on
     multiple graph sizes without minting a separate named scenario for each one.
+
+    ``topology`` selects the graph structure ("ring", "grid", or "kregular"); ``topology_seed``
+    seeds the random k-regular sampler. ``e_max`` is sized per topology.
     """
     if n_real <= 0:
         raise ValueError(f"n_real must be positive, got {n_real}")
@@ -90,7 +96,9 @@ def make_consensus_config(
     if n_max < n_real:
         raise ValueError(f"n_max must be >= n_real, got n_max={n_max}, n_real={n_real}")
 
-    spec = GraphSpec(n_max=n_max, e_max=2 * n_max, f_n=2, f_e=0, f_g=0)
+    # Ring has 2 directed edges/node; grid and k-regular (k=4) need up to 4.
+    e_max = (2 if topology == "ring" else 4) * n_max
+    spec = GraphSpec(n_max=n_max, e_max=e_max, f_n=2, f_e=0, f_g=0)
     return ToyGraphControlConfig(
         spec=spec,
         n_real=n_real,
@@ -103,6 +111,7 @@ def make_consensus_config(
         ),
         actuator_mask=_dense_actuation(spec, n_real),
         goal_obs_mask=_all_goals_visible(spec, n_real),
+        topology=make_topology(topology, spec, n_real, seed=topology_seed),
     )
 
 
