@@ -17,6 +17,7 @@ docs/sprint_handoff.md
 docs/mpc_handoff.md
 docs/results.md
 docs/experiment_matrix.md
+docs/research_map.md
 
 # Local-only under docs/assets; whitelist figure(s) the README renders on GitHub
 docs/assets/*

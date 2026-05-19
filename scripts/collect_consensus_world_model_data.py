@@ -34,6 +34,16 @@ Dataset contents:
     ------|----------|----------|------------
     TOTAL | 16 000   |          | 800 000
 
+PER-TOPOLOGY DATASETS (experiment matrix — grid and k-regular case studies)
+---------------------------------------------------------------------------
+Pass --topology {ring,grid,kregular} to apply a non-ring structure to every size. Grid
+sizes must be rectangular; k-regular sizes need n*k even and n >= k+1. Recommended:
+
+    --topology grid     --sizes 4,6,9,12,16  --out experiments/world_model/grid/transitions.npz
+    --topology kregular --sizes 6,8,10,12,16 --out experiments/world_model/kregular/transitions.npz
+
+All else identical to the ring dataset (random policy, --episodes-per-size 2000, --seed 0).
+
 TRAIN / OOD SPLIT (used at training time, not collection time)
 --------------------------------------------------------------
 The dataset stores n_real per transition, so splits are applied in the training script
@@ -70,6 +80,15 @@ def main() -> int:
     parser.add_argument("--action-scale", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument(
+        "--topology",
+        default="ring",
+        choices=["ring", "grid", "kregular"],
+        help="Graph topology applied to every size in this dataset.",
+    )
+    parser.add_argument(
+        "--topology-seed", type=int, default=0, help="Seed for the random k-regular sampler."
+    )
+    parser.add_argument(
         "--out",
         type=Path,
         default=Path("experiments/world_model/consensus_transitions.npz"),
@@ -88,6 +107,8 @@ def main() -> int:
         noise_std=args.noise_std,
         action_scale=args.action_scale,
         seed=args.seed,
+        topology=args.topology,
+        topology_seed=args.topology_seed,
     )
     metadata = {
         "sizes": sizes,
@@ -99,6 +120,8 @@ def main() -> int:
         "noise_std": args.noise_std,
         "action_scale": args.action_scale,
         "seed": args.seed,
+        "topology": args.topology,
+        "topology_seed": args.topology_seed,
         "num_transitions": dataset.size,
     }
     save_transition_dataset(dataset, args.out, metadata=metadata)
