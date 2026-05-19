@@ -106,7 +106,9 @@ def _epoch_metrics(values: list[dict[str, float]]) -> dict[str, float]:
     }
 
 
-def _plot_loss(history: list[dict[str, float]], out_path: Path, model_name: str) -> None:
+def _plot_loss(
+    history: list[dict[str, float]], out_path: Path, model_name: str, best_epoch: int
+) -> None:
     os.environ.setdefault("MPLCONFIGDIR", str(out_path.parent / ".mplconfig"))
     import matplotlib
 
@@ -121,6 +123,13 @@ def _plot_loss(history: list[dict[str, float]], out_path: Path, model_name: str)
     ax.plot(epochs, train_loss, label="train", linewidth=2.0, color="#1f77b4")
     if not all(np.isnan(val_loss)):
         ax.plot(epochs, val_loss, label="val", linewidth=2.0, color="#ff7f0e")
+    ax.axvline(
+        best_epoch,
+        color="#2ca02c",
+        linestyle="--",
+        linewidth=1.5,
+        label=f"checkpoint (epoch {best_epoch})",
+    )
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Masked node MSE")
     ax.set_title(f"World Model Training — {model_name}")
@@ -216,6 +225,14 @@ def main() -> int:
 
     history: list[dict[str, float]] = []
     rng = np.random.default_rng(args.seed)
+
+    # Best-validation-epoch checkpointing: keep the params at the lowest val loss, not the
+    # last epoch. With no validation split, fall back to selecting on train loss.
+    has_val = val_indices.size > 0
+    best_val = float("inf")
+    best_params = params
+    best_epoch = 0
+
     for epoch in range(1, args.epochs + 1):
         shuffled = np.array(train_indices, copy=True)
         rng.shuffle(shuffled)
@@ -243,6 +260,11 @@ def main() -> int:
             "val_x_mse": epoch_val["x_mse"],
         }
         history.append(row)
+        selection = row["val_loss"] if has_val else row["train_loss"]
+        if selection < best_val:
+            best_val = selection
+            best_params = params
+            best_epoch = epoch
         print(
             f"epoch={epoch:03d} train_loss={row['train_loss']:.6f} "
             f"train_x_mse={row['train_x_mse']:.6f} "
@@ -267,7 +289,7 @@ def main() -> int:
     save_checkpoint(
         checkpoint_path,
         {
-            "params": params,
+            "params": best_params,
             "model_name": args.model,
             "model_config": {k: v for k, v in vars(model_config).items()},
             "train_config": {
@@ -279,17 +301,24 @@ def main() -> int:
                 "val_frac": args.val_frac,
                 "seed": args.seed,
                 "n_max": n_max,
+                "best_epoch": best_epoch,
+                "best_val_loss": best_val,
+                "checkpoint_selection": "val_loss" if has_val else "train_loss",
             },
             "history": history,
         },
     )
     metrics_path.write_text(json.dumps(history, indent=2) + "\n")
-    _plot_loss(history, loss_curve_path, args.model)
+    _plot_loss(history, loss_curve_path, args.model, best_epoch)
 
     if run is not None:
         run.log({"loss_curve": wandb.Image(str(loss_curve_path))})  # type: ignore[attr-defined]
         run.finish()
 
+    print(
+        f"Checkpointed best epoch {best_epoch}/{args.epochs} "
+        f"({'val' if has_val else 'train'}_loss={best_val:.6f})"
+    )
     print(f"Saved checkpoint to {checkpoint_path}")
     print(f"Saved loss curve to {loss_curve_path}")
     return 0

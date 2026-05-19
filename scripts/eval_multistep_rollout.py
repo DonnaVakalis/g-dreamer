@@ -86,9 +86,16 @@ def _rollout_episode(
     beta: float,
     noise_std: float,
     action_scale: float,
+    topology: str,
 ) -> tuple[np.ndarray, np.ndarray]:
     cfg = make_consensus_config(
-        size, n_max=n_max, horizon=horizon, alpha=alpha, beta=beta, noise_std=noise_std
+        size,
+        n_max=n_max,
+        horizon=horizon,
+        alpha=alpha,
+        beta=beta,
+        noise_std=noise_std,
+        topology=topology,
     )
     key = jax.random.PRNGKey(seed)
     key, reset_key = jax.random.split(key)
@@ -144,6 +151,7 @@ def _run_size(
     noise_std,
     action_scale,
     diverge_threshold,
+    topology,
 ):
     all_x = []
     all_g = []
@@ -159,6 +167,7 @@ def _run_size(
             beta=beta,
             noise_std=noise_std,
             action_scale=action_scale,
+            topology=topology,
         )
         all_x.append(x_e)
         all_g.append(g_e)
@@ -352,6 +361,12 @@ def main() -> int:
     )
     parser.add_argument("--sizes", default="5,10,16", help="Graph sizes to evaluate.")
     parser.add_argument("--train-sizes", default="4,5,6", help="Training sizes (for panel labels).")
+    parser.add_argument(
+        "--topology",
+        default="ring",
+        choices=["ring", "grid", "kregular"],
+        help="Graph topology of the eval environment (match the checkpoints' training topology).",
+    )
     parser.add_argument("--episodes", type=int, default=10)
     parser.add_argument("--horizon", type=int, default=50)
     parser.add_argument(
@@ -400,15 +415,22 @@ def main() -> int:
                 noise_std=args.noise_std,
                 action_scale=args.action_scale,
                 diverge_threshold=args.diverge_threshold,
+                topology=args.topology,
             )
 
     _plot(results, sizes, train_sizes, args.out)
+    div_stem = args.out.stem
+    div_stem = (
+        div_stem.replace("rollout", "divergence_rate")
+        if "rollout" in div_stem
+        else div_stem + "_divergence_rate"
+    )
     _plot_divergence_rate(
         results,
         sizes,
         train_sizes,
         args.diverge_threshold,
-        args.out.with_name("multistep_divergence_rate.png"),
+        args.out.with_name(div_stem + ".png"),
     )
 
     data_path = args.out.with_name(args.out.stem + "_data.json")

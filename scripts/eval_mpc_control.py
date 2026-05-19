@@ -100,7 +100,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoint-dir", type=Path, default=Path("experiments/world_model"))
     parser.add_argument("--run-prefix", default="full")
-    parser.add_argument("--topology", default="ring")
+    parser.add_argument(
+        "--topology",
+        default="ring",
+        choices=["ring", "grid", "kregular"],
+        help="Graph topology (match the checkpoints' training topology).",
+    )
     parser.add_argument("--models", default="flat,graph_enc_dec,graph_rssm,true,proportional,zero")
     parser.add_argument("--sizes", default="5,10,16")
     parser.add_argument("--horizons", default="1,5,10", help="Planning horizons (planned models).")
@@ -117,11 +122,6 @@ def main() -> int:
         "--out", type=Path, default=Path("experiments/world_model/mpc_control.json")
     )
     args = parser.parse_args()
-
-    if args.topology != "ring":
-        raise NotImplementedError(
-            f"topology {args.topology!r} not available yet — see docs/experiment_matrix.md Stage A"
-        )
 
     models = [m.strip() for m in args.models.split(",") if m.strip()]
     sizes = parse_sizes(args.sizes)
@@ -148,6 +148,7 @@ def main() -> int:
                 alpha=args.alpha,
                 beta=args.beta,
                 noise_std=args.noise_std,
+                topology=args.topology,
             )
             structure_state, _ = reset(jax.random.PRNGKey(0), cfg)  # topology is deterministic
             results[model][str(size)] = {}
