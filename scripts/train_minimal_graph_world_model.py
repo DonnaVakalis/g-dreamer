@@ -4,11 +4,17 @@ Three variants available via --model:
   flat         Variant A: MLP on flattened padded node observations
   graph_enc_dec Variant B: GNN encoder/decoder with flat latent dynamics
   graph_rssm   Variant C: Full graph-structured RSSM (message-passing through dynamics)
+
+--rollout-horizon H controls the training objective (factor P1):
+  H=1   one-step loss (predict next obs from the true current obs).
+  H>1   multi-step rollout loss — unroll the model H steps on its own predictions
+        (static goal re-injected each step) and penalise the whole trajectory.
 """
 
 from __future__ import annotations
 
 import argparse
+import functools
 import importlib
 import json
 import os
@@ -97,6 +103,89 @@ def _split_indices(
     return np.nonzero(is_train)[0], np.nonzero(is_val)[0]
 
 
+def _window_split(
+    dataset,
+    train_sizes: list[int],
+    horizon: int,
+    val_frac: float,
+    seed: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Non-overlapping length-`horizon` rollout windows, split train/val by episode."""
+    n = dataset.size
+    episode_id = dataset.episode_id
+    starts = np.arange(0, n - horizon + 1, horizon)
+    same_episode = episode_id[starts] == episode_id[starts + horizon - 1]
+    size_ok = np.isin(dataset.n_real[starts], np.asarray(train_sizes, dtype=np.int32))
+    starts = starts[same_episode & size_ok]
+    if starts.size == 0:
+        raise ValueError(f"No rollout windows for train_sizes={train_sizes}, horizon={horizon}")
+
+    episodes = np.unique(episode_id[starts])
+    rng = np.random.default_rng(seed)
+    rng.shuffle(episodes)
+    if val_frac <= 0.0 or episodes.size < 2:
+        return starts, np.asarray([], dtype=starts.dtype)
+    n_val = min(max(1, int(round(val_frac * episodes.size))), episodes.size - 1)
+    val_episodes = set(episodes[:n_val].tolist())
+    is_val = np.array([int(episode_id[s]) in val_episodes for s in starts])
+    return starts[~is_val], starts[is_val]
+
+
+def _make_window_batch(dataset, starts: np.ndarray, *, horizon: int) -> dict[str, jnp.ndarray]:
+    rows = starts[:, None] + np.arange(horizon)  # (B, horizon)
+    return {
+        "nodes0": jnp.asarray(dataset.nodes[starts]),
+        "actions": jnp.asarray(dataset.actions[rows]),
+        "gt_nodes": jnp.asarray(dataset.next_nodes[rows]),
+        "senders": jnp.asarray(dataset.senders[starts]),
+        "receivers": jnp.asarray(dataset.receivers[starts]),
+        "node_mask": jnp.asarray(dataset.node_mask[starts]),
+        "edge_mask": jnp.asarray(dataset.edge_mask[starts]),
+    }
+
+
+def _make_multistep_loss(mod: types.ModuleType):
+    """Build an open-loop rollout loss: unroll the model on its own predictions.
+
+    The static goal channel is re-injected each step (the model is used this way at
+    eval / MPC time); the loss is masked node MSE over the whole predicted trajectory.
+    """
+    predict = mod.predict_next_nodes_single
+
+    def _rollout(params, nodes0, actions, senders, receivers, node_mask, edge_mask):
+        goal = nodes0[:, 1]
+
+        def step(nodes, action):
+            pred = predict(params, nodes, action, senders, receivers, node_mask, edge_mask)
+            x_next = jnp.where(node_mask, pred[:, 0], 0.0)
+            return jnp.stack([x_next, goal], axis=-1), pred
+
+        _, pred_traj = jax.lax.scan(step, nodes0, actions)
+        return pred_traj  # (horizon, n_max, 2)
+
+    rollout_batch = jax.vmap(_rollout, in_axes=(None, 0, 0, 0, 0, 0, 0))
+
+    def loss_fn(params, batch):
+        pred = rollout_batch(
+            params,
+            batch["nodes0"],
+            batch["actions"],
+            batch["senders"],
+            batch["receivers"],
+            batch["node_mask"],
+            batch["edge_mask"],
+        )
+        gt = batch["gt_nodes"]
+        mask = batch["node_mask"][:, None, :, None].astype(jnp.float32)
+        sq = jnp.square(pred - gt) * mask
+        loss = jnp.sum(sq) / jnp.maximum(jnp.sum(mask) * pred.shape[-1], 1.0)
+        x_sq = jnp.square(pred[..., 0] - gt[..., 0]) * mask[..., 0]
+        x_mse = jnp.sum(x_sq) / jnp.maximum(jnp.sum(mask[..., 0]), 1.0)
+        return loss, {"loss": loss, "x_mse": x_mse}
+
+    return loss_fn
+
+
 def _epoch_metrics(values: list[dict[str, float]]) -> dict[str, float]:
     if not values:
         return {"loss": float("nan"), "x_mse": float("nan")}
@@ -162,6 +251,12 @@ def main() -> int:
         help="Output directory. Defaults to experiments/world_model/{model}.",
     )
     parser.add_argument("--epochs", type=int, default=60)
+    parser.add_argument(
+        "--rollout-horizon",
+        type=int,
+        default=1,
+        help="Training objective (P1): 1 = one-step loss; H>1 = H-step open-loop rollout loss.",
+    )
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--learning-rate", type=float, default=3e-3)
     parser.add_argument("--latent-dim", type=int, default=32)
@@ -175,12 +270,24 @@ def main() -> int:
 
     dataset = load_transition_dataset(args.dataset)
     train_sizes = parse_sizes(args.train_sizes)
-    train_indices, val_indices = _split_indices(dataset, train_sizes, args.val_frac, args.seed)
+    horizon: int = args.rollout_horizon
 
     node_dim = int(dataset.nodes.shape[-1])
     n_max = int(dataset.nodes.shape[1])
     model_config = _make_config(args.model, node_dim, n_max, args.latent_dim, args.hidden_dim)
     mod = _load_model_module(args.model)
+
+    # Factor P1: one-step loss (horizon=1) vs multi-step rollout loss (horizon>1).
+    if horizon == 1:
+        train_indices, val_indices = _split_indices(dataset, train_sizes, args.val_frac, args.seed)
+        make_batch = _make_batch
+        loss_fn = mod.batch_loss
+    else:
+        train_indices, val_indices = _window_split(
+            dataset, train_sizes, horizon, args.val_frac, args.seed
+        )
+        make_batch = functools.partial(_make_window_batch, horizon=horizon)
+        loss_fn = _make_multistep_loss(mod)
 
     params = mod.init_params(jax.random.PRNGKey(args.seed), model_config)
     optimizer = optax.adam(args.learning_rate)
@@ -213,14 +320,14 @@ def main() -> int:
 
     @jax.jit
     def train_step(params, opt_state, batch):
-        (loss, metrics), grads = jax.value_and_grad(mod.batch_loss, has_aux=True)(params, batch)
+        (loss, metrics), grads = jax.value_and_grad(loss_fn, has_aux=True)(params, batch)
         updates, opt_state = optimizer.update(grads, opt_state, params)
         params = optax.apply_updates(params, updates)
         return params, opt_state, metrics
 
     @jax.jit
     def eval_step(params, batch):
-        _, metrics = mod.batch_loss(params, batch)
+        _, metrics = loss_fn(params, batch)
         return metrics
 
     history: list[dict[str, float]] = []
@@ -239,14 +346,14 @@ def main() -> int:
         train_metrics = []
         for start in range(0, shuffled.size, args.batch_size):
             batch_indices = shuffled[start : start + args.batch_size]
-            batch = _make_batch(dataset, batch_indices)
+            batch = make_batch(dataset, batch_indices)
             params, opt_state, metrics = train_step(params, opt_state, batch)
             train_metrics.append({k: float(v) for k, v in metrics.items()})
 
         val_metrics = []
         for start in range(0, val_indices.size, args.batch_size):
             batch_indices = val_indices[start : start + args.batch_size]
-            batch = _make_batch(dataset, batch_indices)
+            batch = make_batch(dataset, batch_indices)
             metrics = eval_step(params, batch)
             val_metrics.append({k: float(v) for k, v in metrics.items()})
 
@@ -301,6 +408,7 @@ def main() -> int:
                 "val_frac": args.val_frac,
                 "seed": args.seed,
                 "n_max": n_max,
+                "rollout_horizon": horizon,
                 "best_epoch": best_epoch,
                 "best_val_loss": best_val,
                 "checkpoint_selection": "val_loss" if has_val else "train_loss",
