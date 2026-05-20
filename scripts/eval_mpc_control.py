@@ -38,7 +38,7 @@ from dgr.control.loop import (
     zero_actor,
 )
 from dgr.control.mpc import PlannerConfig, cem, random_shooting
-from dgr.control.true_rollout import make_consensus_rollout
+from dgr.control.true_rollout import make_consensus_rollout, make_node_independent_rollout
 from dgr.control.wm_rollout import make_wm_rollout
 from dgr.envs.suites.toy_graph_control.core import reset
 from dgr.envs.suites.toy_graph_control.scenarios import make_consensus_config
@@ -69,15 +69,22 @@ def _build_actor(model, horizon, *, cfg, structure_state, planner, population, w
         return make_proportional_actor(cfg.actuator_mask)
 
     if model == "true":
-        rollout_fn = make_consensus_rollout(
-            structure_state.senders,
-            structure_state.receivers,
-            node_mask,
-            structure_state.edge_mask,
-            cfg.actuator_mask,
-            cfg.dynamics.alpha,
-            cfg.dynamics.beta,
-        )
+        if cfg.dynamics.mode == "consensus":
+            rollout_fn = make_consensus_rollout(
+                structure_state.senders,
+                structure_state.receivers,
+                node_mask,
+                structure_state.edge_mask,
+                cfg.actuator_mask,
+                cfg.dynamics.alpha,
+                cfg.dynamics.beta,
+            )
+        elif cfg.dynamics.mode == "node_independent":
+            rollout_fn = make_node_independent_rollout(
+                node_mask, cfg.actuator_mask, cfg.dynamics.alpha, cfg.dynamics.beta
+            )
+        else:
+            raise ValueError(f"No true rollout for dynamics {cfg.dynamics.mode!r}")
     else:
         predict_fn, params = wm
         rollout_fn = make_wm_rollout(
@@ -105,6 +112,12 @@ def main() -> int:
         default="ring",
         choices=["ring", "grid", "kregular"],
         help="Graph topology (match the checkpoints' training topology).",
+    )
+    parser.add_argument(
+        "--dynamics",
+        default="consensus",
+        choices=["consensus", "node_independent"],
+        help="Dynamics family (match the checkpoints' training dynamics).",
     )
     parser.add_argument("--models", default="flat,graph_enc_dec,graph_rssm,true,proportional,zero")
     parser.add_argument("--sizes", default="5,10,16")
@@ -149,6 +162,7 @@ def main() -> int:
                 beta=args.beta,
                 noise_std=args.noise_std,
                 topology=args.topology,
+                dynamics=args.dynamics,
             )
             structure_state, _ = reset(jax.random.PRNGKey(0), cfg)  # topology is deterministic
             results[model][str(size)] = {}

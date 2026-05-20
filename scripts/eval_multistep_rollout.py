@@ -87,6 +87,7 @@ def _rollout_episode(
     noise_std: float,
     action_scale: float,
     topology: str,
+    dynamics: str,
 ) -> tuple[np.ndarray, np.ndarray]:
     cfg = make_consensus_config(
         size,
@@ -96,6 +97,7 @@ def _rollout_episode(
         beta=beta,
         noise_std=noise_std,
         topology=topology,
+        dynamics=dynamics,
     )
     key = jax.random.PRNGKey(seed)
     key, reset_key = jax.random.split(key)
@@ -152,6 +154,7 @@ def _run_size(
     action_scale,
     diverge_threshold,
     topology,
+    dynamics,
 ):
     all_x = []
     all_g = []
@@ -168,6 +171,7 @@ def _run_size(
             noise_std=noise_std,
             action_scale=action_scale,
             topology=topology,
+            dynamics=dynamics,
         )
         all_x.append(x_e)
         all_g.append(g_e)
@@ -367,6 +371,12 @@ def main() -> int:
         choices=["ring", "grid", "kregular"],
         help="Graph topology of the eval environment (match the checkpoints' training topology).",
     )
+    parser.add_argument(
+        "--dynamics",
+        default="consensus",
+        choices=["consensus", "node_independent"],
+        help="Dynamics family of the eval environment.",
+    )
     parser.add_argument("--episodes", type=int, default=10)
     parser.add_argument("--horizon", type=int, default=50)
     parser.add_argument(
@@ -416,6 +426,7 @@ def main() -> int:
                 action_scale=args.action_scale,
                 diverge_threshold=args.diverge_threshold,
                 topology=args.topology,
+                dynamics=args.dynamics,
             )
 
     _plot(results, sizes, train_sizes, args.out)

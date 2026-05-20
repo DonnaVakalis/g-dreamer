@@ -232,6 +232,34 @@ def _step_consensus(
     return x_next, reward
 
 
+def _step_node_independent(
+    key: jax.Array,
+    cfg: ToyGraphControlConfig,
+    state: EnvState,
+    action: jnp.ndarray,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """Consensus with the neighbour-coupling term removed: each node evolves alone.
+
+    x_next = (1 - alpha) * x + beta * u + noise. The graph still exists (for the encoder)
+    but the dynamics ignore it — a negative control for the error-amplification question.
+    """
+    spec = cfg.spec
+    dyn = cfg.dynamics
+
+    node_mask_f = state.node_mask.astype(jnp.float32)
+    actuator_mask_f = cfg.actuator_mask.astype(jnp.float32) * node_mask_f
+
+    u = action.astype(jnp.float32) * actuator_mask_f
+    noise = dyn.noise_std * jax.random.normal(key, (spec.n_max,), dtype=jnp.float32)
+
+    x_next = (1.0 - dyn.alpha) * state.x + dyn.beta * u + noise
+    x_next = jnp.where(state.node_mask, x_next, 0.0)
+
+    err = (x_next - state.goal) * node_mask_f
+    reward = -jnp.sum(err * err) / jnp.maximum(jnp.sum(node_mask_f), 1.0)
+    return x_next, reward
+
+
 def _step_directed_flow(
     key: jax.Array,
     cfg: ToyGraphControlConfig,
@@ -260,6 +288,8 @@ def _apply_dynamics(
 
     if mode == "consensus":
         return _step_consensus(key, cfg, state, action)
+    if mode == "node_independent":
+        return _step_node_independent(key, cfg, state, action)
     if mode == "directed_flow":
         return _step_directed_flow(key, cfg, state, action)
     if mode == "spring_mass":

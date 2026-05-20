@@ -89,6 +89,12 @@ def main() -> int:
         "--topology-seed", type=int, default=0, help="Seed for the random k-regular sampler."
     )
     parser.add_argument(
+        "--dynamics",
+        default="consensus",
+        choices=["consensus", "node_independent"],
+        help="Dynamics family applied to every episode in this dataset.",
+    )
+    parser.add_argument(
         "--out",
         type=Path,
         default=Path("experiments/world_model/consensus_transitions.npz"),
@@ -109,6 +115,7 @@ def main() -> int:
         seed=args.seed,
         topology=args.topology,
         topology_seed=args.topology_seed,
+        dynamics=args.dynamics,
     )
     metadata = {
         "sizes": sizes,
@@ -122,6 +129,7 @@ def main() -> int:
         "seed": args.seed,
         "topology": args.topology,
         "topology_seed": args.topology_seed,
+        "dynamics": args.dynamics,
         "num_transitions": dataset.size,
     }
     save_transition_dataset(dataset, args.out, metadata=metadata)

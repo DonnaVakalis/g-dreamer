@@ -82,6 +82,7 @@ def _rollout_episode(
     noise_std: float,
     action_scale: float,
     topology: str,
+    dynamics: str,
 ) -> dict:
     cfg = make_consensus_config(
         size,
@@ -91,6 +92,7 @@ def _rollout_episode(
         beta=beta,
         noise_std=noise_std,
         topology=topology,
+        dynamics=dynamics,
     )
     key = jax.random.PRNGKey(seed)
     key, reset_key = jax.random.split(key)
@@ -234,6 +236,12 @@ def main() -> int:
         choices=["ring", "grid", "kregular"],
         help="Graph topology of the eval environment (match the checkpoint's training topology).",
     )
+    parser.add_argument(
+        "--dynamics",
+        default="consensus",
+        choices=["consensus", "node_independent"],
+        help="Dynamics family of the eval environment (match the checkpoint's training dynamics).",
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument(
         "--out",
@@ -294,6 +302,7 @@ def main() -> int:
                 noise_std=args.noise_std,
                 action_scale=args.action_scale,
                 topology=args.topology,
+                dynamics=args.dynamics,
             )
             episode_x_mses.append(result["x_mse"])
             episode_goal_mses.append(result["goal_mse"])

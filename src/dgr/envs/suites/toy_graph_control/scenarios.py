@@ -80,15 +80,17 @@ def make_consensus_config(
     noise_std: float = 0.01,
     topology: str = "ring",
     topology_seed: int = 0,
+    dynamics: str = "consensus",
 ) -> ToyGraphControlConfig:
     """
-    Build a simple dense-actuation, full-goal-visibility consensus config for arbitrary graph sizes.
+    Build a dense-actuation, full-goal-visibility toy graph-control config for arbitrary sizes.
 
     This is the minimal setting used by the graph world model sprint so we can train on
     multiple graph sizes without minting a separate named scenario for each one.
 
     ``topology`` selects the graph structure ("ring", "grid", or "kregular"); ``topology_seed``
-    seeds the random k-regular sampler. ``e_max`` is sized per topology.
+    seeds the random k-regular sampler; ``e_max`` is sized per topology. ``dynamics`` selects
+    the dynamics family ("consensus" or "node_independent").
     """
     if n_real <= 0:
         raise ValueError(f"n_real must be positive, got {n_real}")
@@ -103,7 +105,7 @@ def make_consensus_config(
         spec=spec,
         n_real=n_real,
         dynamics=DynamicsConfig(
-            mode="consensus",
+            mode=dynamics,
             horizon=horizon,
             alpha=alpha,
             beta=beta,

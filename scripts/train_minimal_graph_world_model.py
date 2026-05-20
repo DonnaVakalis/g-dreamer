@@ -28,7 +28,7 @@ import numpy as np
 import optax
 import wandb
 
-from dgr.agents.graph_dreamerv3.checkpoints import save_checkpoint
+from dgr.agents.graph_dreamerv3.checkpoints import load_checkpoint, save_checkpoint
 from dgr.agents.graph_dreamerv3.data import load_transition_dataset, parse_sizes
 from dgr.experiments.metadata import ExperimentMetadata
 from dgr.experiments.wandb_utils import wandb_init_kwargs
@@ -257,6 +257,15 @@ def main() -> int:
         default=1,
         help="Training objective (P1): 1 = one-step loss; H>1 = H-step open-loop rollout loss.",
     )
+    parser.add_argument(
+        "--init-checkpoint",
+        type=Path,
+        default=None,
+        help="Warm-start params from this checkpoint (recommended for --rollout-horizon > 1).",
+    )
+    parser.add_argument(
+        "--grad-clip", type=float, default=1.0, help="Global grad-norm clip (rollout loss only)."
+    )
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--learning-rate", type=float, default=3e-3)
     parser.add_argument("--latent-dim", type=int, default=32)
@@ -289,8 +298,22 @@ def main() -> int:
         make_batch = functools.partial(_make_window_batch, horizon=horizon)
         loss_fn = _make_multistep_loss(mod)
 
-    params = mod.init_params(jax.random.PRNGKey(args.seed), model_config)
-    optimizer = optax.adam(args.learning_rate)
+    if args.init_checkpoint is not None:
+        # Warm start (used for multi-step training: rollout loss from scratch is unstable).
+        params = load_checkpoint(args.init_checkpoint)["params"]
+    else:
+        params = mod.init_params(jax.random.PRNGKey(args.seed), model_config)
+
+    if horizon == 1:
+        optimizer = optax.adam(args.learning_rate)
+    else:
+        # The multi-step rollout loss is heavy-tailed — a diverged window can blow the loss
+        # up by many orders of magnitude. Clip the global grad norm so one bad window cannot
+        # destroy the model.
+        optimizer = optax.chain(
+            optax.clip_by_global_norm(args.grad_clip),
+            optax.adam(args.learning_rate),
+        )
     opt_state = optimizer.init(params)
 
     run = None

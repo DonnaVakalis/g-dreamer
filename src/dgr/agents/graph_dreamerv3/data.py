@@ -52,6 +52,7 @@ def collect_random_transitions(
     seed: int = 0,
     topology: str = "ring",
     topology_seed: int = 0,
+    dynamics: str = "consensus",
 ) -> TransitionDataset:
     n_max = max(sizes) if n_max is None else n_max
     if n_max < max(sizes):
@@ -82,6 +83,7 @@ def collect_random_transitions(
             noise_std=noise_std,
             topology=topology,
             topology_seed=topology_seed,
+            dynamics=dynamics,
         )
         for _ in range(episodes_per_size):
             key, reset_key = jax.random.split(key)

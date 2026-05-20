@@ -47,3 +47,31 @@ def make_consensus_rollout(
         return x_traj
 
     return rollout
+
+
+def make_node_independent_rollout(
+    node_mask: jnp.ndarray,
+    actuator_mask: jnp.ndarray,
+    alpha: float,
+    beta: float,
+) -> RolloutFn:
+    """Node-independent true rollout: ``x_next = (1-α)·x + β·u`` per node, no coupling.
+
+    The graph still exists (for the encoder side of any world model) but the dynamics ignore
+    it — so senders / receivers / edge_mask are not arguments here.
+    """
+    node_mask_b = node_mask.astype(jnp.bool_)
+    actuator_mask_f = actuator_mask.astype(jnp.float32) * node_mask_b.astype(jnp.float32)
+    one_minus_alpha = 1.0 - alpha
+
+    def rollout(nodes0: jnp.ndarray, action_seq: jnp.ndarray) -> jnp.ndarray:
+        def step(x: jnp.ndarray, action: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
+            u = action.astype(jnp.float32) * actuator_mask_f
+            x_next = one_minus_alpha * x + beta * u
+            x_next = jnp.where(node_mask_b, x_next, 0.0)
+            return x_next, x_next
+
+        _, x_traj = lax.scan(step, nodes0[:, 0], action_seq)
+        return x_traj
+
+    return rollout
