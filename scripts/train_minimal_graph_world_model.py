@@ -283,6 +283,13 @@ def main() -> int:
         help="Training objective (P1): 1 = one-step loss; H>1 = H-step open-loop rollout loss.",
     )
     parser.add_argument(
+        "--loss-aggregation",
+        choices=["mean", "final", "max"],
+        default="mean",
+        help="How rollout-loss aggregates timesteps (only used when --rollout-horizon > 1). "
+        "final = stability-targeted (P1' direction); mean = current default.",
+    )
+    parser.add_argument(
         "--init-checkpoint",
         type=Path,
         default=None,
@@ -321,7 +328,7 @@ def main() -> int:
             dataset, train_sizes, horizon, args.val_frac, args.seed
         )
         make_batch = functools.partial(_make_window_batch, horizon=horizon)
-        loss_fn = _make_multistep_loss(mod)
+        loss_fn = _make_multistep_loss(mod, aggregation=args.loss_aggregation)
 
     if args.init_checkpoint is not None:
         # Warm start (used for multi-step training: rollout loss from scratch is unstable).
@@ -457,6 +464,7 @@ def main() -> int:
                 "seed": args.seed,
                 "n_max": n_max,
                 "rollout_horizon": horizon,
+                "loss_aggregation": args.loss_aggregation,
                 "best_epoch": best_epoch,
                 "best_val_loss": best_val,
                 "checkpoint_selection": "val_loss" if has_val else "train_loss",
