@@ -12,6 +12,7 @@ from typing import Callable, NamedTuple
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 from dgr.control.mpc import CostFn, PlannerConfig, PlannerResult
 from dgr.control.wm_rollout import RolloutFn
@@ -94,3 +95,48 @@ def run_episode(key: jax.Array, cfg: ToyGraphControlConfig, actor: Actor) -> Epi
         total = total + reward
     final_mse = mse_to_goal(state.x, state.goal, state.node_mask)
     return EpisodeResult(episode_return=total, final_mse=final_mse)
+
+
+def collect_episode(
+    key: jax.Array, cfg: ToyGraphControlConfig, actor: Actor
+) -> tuple[EpisodeResult, dict[str, np.ndarray]]:
+    """Run one episode and record per-step transitions for on-policy data collection.
+
+    Returns the episode result plus a dict of stacked arrays matching the
+    ``TransitionDataset`` shape (nodes / actions / next_nodes / senders / receivers /
+    node_mask / edge_mask / step_id), one entry per env step.
+    """
+    reset_key, key = jax.random.split(key)
+    state, obs = reset(reset_key, cfg)
+    nodes_list: list[np.ndarray] = []
+    actions_list: list[np.ndarray] = []
+    next_nodes_list: list[np.ndarray] = []
+    total = jnp.array(0.0, dtype=jnp.float32)
+    senders = np.asarray(state.senders, dtype=np.int32)
+    receivers = np.asarray(state.receivers, dtype=np.int32)
+    node_mask = np.asarray(state.node_mask, dtype=np.bool_)
+    edge_mask = np.asarray(state.edge_mask, dtype=np.bool_)
+    for _ in range(int(cfg.dynamics.horizon)):
+        key, action_key, step_key = jax.random.split(key, 3)
+        action = actor(action_key, state, obs)
+        next_state, next_obs, reward, _ = step(step_key, cfg, state, action)
+        nodes_list.append(np.asarray(obs.nodes, dtype=np.float32))
+        actions_list.append(np.asarray(action, dtype=np.float32))
+        next_nodes_list.append(np.asarray(next_obs.nodes, dtype=np.float32))
+        total = total + reward
+        state, obs = next_state, next_obs
+    final_mse = mse_to_goal(state.x, state.goal, state.node_mask)
+    h = len(nodes_list)
+    return (
+        EpisodeResult(episode_return=total, final_mse=final_mse),
+        {
+            "nodes": np.stack(nodes_list, axis=0),
+            "actions": np.stack(actions_list, axis=0),
+            "next_nodes": np.stack(next_nodes_list, axis=0),
+            "senders": np.broadcast_to(senders, (h, senders.shape[0])).copy(),
+            "receivers": np.broadcast_to(receivers, (h, receivers.shape[0])).copy(),
+            "node_mask": np.broadcast_to(node_mask, (h, node_mask.shape[0])).copy(),
+            "edge_mask": np.broadcast_to(edge_mask, (h, edge_mask.shape[0])).copy(),
+            "step_id": np.arange(h, dtype=np.int32),
+        },
+    )

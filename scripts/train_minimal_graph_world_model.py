@@ -144,12 +144,23 @@ def _make_window_batch(dataset, starts: np.ndarray, *, horizon: int) -> dict[str
     }
 
 
-def _make_multistep_loss(mod: types.ModuleType):
+def _make_multistep_loss(mod: types.ModuleType, *, aggregation: str = "mean"):
     """Build an open-loop rollout loss: unroll the model on its own predictions.
 
     The static goal channel is re-injected each step (the model is used this way at
-    eval / MPC time); the loss is masked node MSE over the whole predicted trajectory.
+    eval / MPC time); the loss is masked node MSE aggregated over the predicted
+    trajectory. ``aggregation`` controls *how* the per-step errors are combined — the
+    P1 sub-axis that decides whether the loss is *mean-MSE blind* to the heavy-tailed
+    divergence (Result 5 mechanism):
+
+    - ``mean``  — average over (batch, timestep, node, feature). Current default.
+    - ``final`` — only the *last* timestep of the rollout. A stability-targeted loss in the
+      strict sense: the model must be accurate after ``H`` steps; mean-of-trajectory cannot
+      hide an end-of-trajectory blow-up.
+    - ``max``   — soft-max over timesteps (penalise the worst step). Tail-aware variant.
     """
+    if aggregation not in {"mean", "final", "max"}:
+        raise ValueError(f"unknown loss aggregation {aggregation!r}")
     predict = mod.predict_next_nodes_single
 
     def _rollout(params, nodes0, actions, senders, receivers, node_mask, edge_mask):
@@ -178,7 +189,21 @@ def _make_multistep_loss(mod: types.ModuleType):
         gt = batch["gt_nodes"]
         mask = batch["node_mask"][:, None, :, None].astype(jnp.float32)
         sq = jnp.square(pred - gt) * mask
-        loss = jnp.sum(sq) / jnp.maximum(jnp.sum(mask) * pred.shape[-1], 1.0)
+        if aggregation == "final":
+            # Only score the last predicted step — the most direct rollout-stability signal.
+            sq = sq[:, -1:]
+            denom = jnp.maximum(jnp.sum(mask[:, :1]) * pred.shape[-1], 1.0)
+            loss = jnp.sum(sq) / denom
+        elif aggregation == "max":
+            # Soft-max over timesteps: per-(batch, node, feature) max-error, then mean.
+            per_step = jnp.sum(sq, axis=(2, 3))  # (B, H), sum over node*feat for each step
+            worst = jnp.max(per_step, axis=1)  # (B,)
+            denom = jnp.maximum(
+                jnp.sum(mask, axis=(1, 2, 3)) * pred.shape[-1], 1.0
+            )  # per-batch real count
+            loss = jnp.mean(worst / denom)
+        else:  # mean — original behaviour
+            loss = jnp.sum(sq) / jnp.maximum(jnp.sum(mask) * pred.shape[-1], 1.0)
         x_sq = jnp.square(pred[..., 0] - gt[..., 0]) * mask[..., 0]
         x_mse = jnp.sum(x_sq) / jnp.maximum(jnp.sum(mask[..., 0]), 1.0)
         return loss, {"loss": loss, "x_mse": x_mse}
